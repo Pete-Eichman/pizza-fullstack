@@ -108,33 +108,3 @@ export async function deletePizza(pizzaId: string) {
     return { error: 'Failed to delete pizza' };
   }
 }
-
-export async function loadPizza(pizzaId: string) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    return { error: 'Not authenticated' };
-  }
-
-  try {
-    const rawPizza = await prisma.pizza.findUnique({
-      where: { id: pizzaId },
-    });
-
-    if (!rawPizza || rawPizza.userId !== session.user.id) {
-      return { error: 'Pizza not found or unauthorized' };
-    }
-
-    const pizza = {
-      ...rawPizza,
-      toppings: JSON.parse(rawPizza.toppings) as string[],
-      animation: rawPizza.animation as string | null,
-      filter: rawPizza.filter as string | null,
-    };
-
-    return { pizza };
-  } catch (error) {
-    console.error('Error loading pizza:', error);
-    return { error: 'Failed to load pizza' };
-  }
-}

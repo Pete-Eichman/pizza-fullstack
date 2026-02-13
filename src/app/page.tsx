@@ -1,7 +1,6 @@
-import { auth } from '@/lib/auth';
+import { auth, signOut } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import PizzaCanvas from '@/components/PizzaCanvas';
-import { signOut } from '@/lib/auth';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default async function Home() {
