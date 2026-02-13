@@ -30,10 +30,14 @@ HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
   scale: vi.fn(),
   clip: vi.fn(),
   getImageData: vi.fn().mockReturnValue({ data: new Uint8ClampedArray(500 * 500 * 4) }),
+  putImageData: vi.fn(),
+  drawImage: vi.fn(),
   fillStyle: '',
   strokeStyle: '',
   lineWidth: 0,
   globalAlpha: 1,
+  globalCompositeOperation: 'source-over',
+  filter: 'none',
   lineCap: 'butt',
   lineJoin: 'miter',
 });
@@ -92,7 +96,29 @@ describe('PizzaCanvas', () => {
     render(<PizzaCanvas />);
     expect(screen.getByText('Rotate CW ↻')).toBeInTheDocument();
     expect(screen.getByText('Rotate CCW ↺')).toBeInTheDocument();
-    expect(screen.getByText('Wave 🍕')).toBeInTheDocument();
+    expect(screen.getByText('Wave CW 🍕')).toBeInTheDocument();
+    expect(screen.getByText('Wave CCW 🍕')).toBeInTheDocument();
+  });
+
+  it('renders visual effects buttons', () => {
+    render(<PizzaCanvas />);
+    expect(screen.getByText('Monochrome 🖤')).toBeInTheDocument();
+    expect(screen.getByText('Neon 💜')).toBeInTheDocument();
+  });
+
+  it('toggles filter selection', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    const monoBtn = screen.getByText('Monochrome 🖤');
+    expect(monoBtn.className).toContain('bg-stone-100');
+
+    await user.click(monoBtn);
+    expect(monoBtn.className).toContain('bg-stone-800');
+
+    // Click again to deselect
+    await user.click(monoBtn);
+    expect(monoBtn.className).toContain('bg-stone-100');
   });
 
   it('toggles animation selection', async () => {
@@ -192,6 +218,7 @@ describe('PizzaCanvas', () => {
         name: 'My Pizza',
         toppings: ['pepperoni'],
         animation: null,
+        filter: null,
       });
     });
   });
@@ -199,8 +226,8 @@ describe('PizzaCanvas', () => {
   it('renders saved pizzas list', async () => {
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Margherita', toppings: ['mushroom'], animation: null, createdAt: new Date() },
-        { id: '2', name: 'Supreme', toppings: ['pepperoni', 'olive'], animation: null, createdAt: new Date() },
+        { id: '1', name: 'Margherita', toppings: ['mushroom'], animation: null, filter: null, createdAt: new Date() },
+        { id: '2', name: 'Supreme', toppings: ['pepperoni', 'olive'], animation: null, filter: null, createdAt: new Date() },
       ],
     });
 
@@ -222,7 +249,7 @@ describe('PizzaCanvas', () => {
     const user = userEvent.setup();
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Test Pizza', toppings: ['pepperoni', 'olive'], animation: null, createdAt: new Date() },
+        { id: '1', name: 'Test Pizza', toppings: ['pepperoni', 'olive'], animation: null, filter: null, createdAt: new Date() },
       ],
     });
 
@@ -245,7 +272,7 @@ describe('PizzaCanvas', () => {
     const user = userEvent.setup();
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: 'abc-123', name: 'Delete Me', toppings: [], animation: null, createdAt: new Date() },
+        { id: 'abc-123', name: 'Delete Me', toppings: [], animation: null, filter: null, createdAt: new Date() },
       ],
     });
 
@@ -265,8 +292,8 @@ describe('PizzaCanvas', () => {
   it('displays toppings summary for saved pizza or plain cheese', async () => {
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Cheese Only', toppings: [], animation: null, createdAt: new Date() },
-        { id: '2', name: 'Loaded', toppings: ['pepperoni', 'olive'], animation: 'cw', createdAt: new Date() },
+        { id: '1', name: 'Cheese Only', toppings: [], animation: null, filter: null, createdAt: new Date() },
+        { id: '2', name: 'Loaded', toppings: ['pepperoni', 'olive'], animation: 'cw', filter: null, createdAt: new Date() },
       ],
     });
 

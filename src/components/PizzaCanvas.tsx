@@ -3,13 +3,15 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { savePizza, getUserPizzas, deletePizza } from '@/app/actions/pizza';
 
-type AnimationType = 'cw' | 'ccw' | 'wave' | null;
+type AnimationType = 'cw' | 'ccw' | 'wave' | 'wave-ccw' | null;
+type FilterType = 'mono' | 'neon' | null;
 
 interface SavedPizza {
   id: string;
   name: string;
   toppings: string[];
   animation: string | null;
+  filter: string | null;
   createdAt: Date;
 }
 
@@ -54,9 +56,10 @@ function easeInOutCubic(t: number): number {
 }
 
 // Calculate per-slice rotation offsets for the wave animation.
-// Each slice does a full 360° rotation, staggered so the next slice
-// begins when the previous is ~25% through its rotation.
-function getWaveOffsets(time: number): number[] {
+// Each slice does a full 360° flip, staggered so the next slice
+// begins when the previous is ~25% through its flip.
+// reverse=true starts the cascade from the last slice (CCW feel).
+function getWaveOffsets(time: number, reverse = false): number[] {
   const sliceDuration = 0.8; // seconds for one slice to complete its rotation
   const stagger = 0.25 * sliceDuration; // delay between successive slices
   const cycleDuration = sliceDuration + 7 * stagger; // full cycle for all 8 slices
@@ -64,7 +67,8 @@ function getWaveOffsets(time: number): number[] {
 
   const offsets: number[] = [];
   for (let s = 0; s < 8; s++) {
-    const sliceStart = s * stagger;
+    const idx = reverse ? 7 - s : s;
+    const sliceStart = idx * stagger;
     const progress = Math.max(0, Math.min(1, (t - sliceStart) / sliceDuration));
     offsets.push(easeInOutCubic(progress) * Math.PI * 2);
   }
@@ -295,6 +299,7 @@ export default function PizzaCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedToppings, setSelectedToppings] = useState<Set<string>>(new Set());
   const [animation, setAnimation] = useState<AnimationType>(null);
+  const [filter, setFilter] = useState<FilterType>(null);
   const [savedPizzas, setSavedPizzas] = useState<SavedPizza[]>([]);
   const [pizzaName, setPizzaName] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -314,7 +319,7 @@ export default function PizzaCanvas() {
     }
   };
 
-  const drawPizza = useCallback((ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, rotation = 0, sliceOffsets?: number[]) => {
+  const drawPizza = useCallback((ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, rotation = 0, sliceOffsets?: number[], activeFilter?: FilterType) => {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
     const pizzaRadius = 180;
@@ -511,6 +516,156 @@ export default function PizzaCanvas() {
       drawContent();
       ctx.restore();
     }
+
+    // --- Apply visual filter ---
+    if (activeFilter) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imageData.data;
+      const w = canvas.width;
+      const h = canvas.height;
+
+      if (activeFilter === 'mono') {
+        for (let i = 0; i < d.length; i += 4) {
+          const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          d[i] = lum;
+          d[i + 1] = lum;
+          d[i + 2] = lum;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      } else if (activeFilter === 'neon') {
+        // --- Neon tube sign effect ---
+        // 1. Edge detection via Sobel gradient magnitude
+        const grey = new Float32Array(w * h);
+        for (let i = 0; i < w * h; i++) {
+          const p = i * 4;
+          grey[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+        }
+
+        const edge = new Float32Array(w * h);
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const idx = y * w + x;
+            // Sobel X & Y
+            const gx =
+              -grey[idx - w - 1] + grey[idx - w + 1]
+              - 2 * grey[idx - 1] + 2 * grey[idx + 1]
+              - grey[idx + w - 1] + grey[idx + w + 1];
+            const gy =
+              -grey[idx - w - 1] - 2 * grey[idx - w] - grey[idx - w + 1]
+              + grey[idx + w - 1] + 2 * grey[idx + w] + grey[idx + w + 1];
+            edge[idx] = Math.sqrt(gx * gx + gy * gy);
+          }
+        }
+
+        // Normalise edges to 0-1
+        let maxEdge = 0;
+        for (let i = 0; i < edge.length; i++) {
+          if (edge[i] > maxEdge) maxEdge = edge[i];
+        }
+        const invMax = maxEdge > 0 ? 1 / maxEdge : 0;
+
+        // 2. Map original colours to neon palette
+        const neonR = new Uint8ClampedArray(w * h);
+        const neonG = new Uint8ClampedArray(w * h);
+        const neonB = new Uint8ClampedArray(w * h);
+
+        for (let i = 0; i < w * h; i++) {
+          const p = i * 4;
+          const r = d[p], g = d[p + 1], b = d[p + 2];
+          // Determine dominant hue for neon colour mapping
+          const mx = Math.max(r, g, b);
+          const mn = Math.min(r, g, b);
+          const chroma = mx - mn;
+          let hue = 0;
+          if (chroma > 10) {
+            if (mx === r) hue = ((g - b) / chroma + 6) % 6;
+            else if (mx === g) hue = (b - r) / chroma + 2;
+            else hue = (r - g) / chroma + 4;
+          }
+          // Map hue ranges to neon tube colours
+          // 0-1 red/orange → hot pink/red (#FF1060)
+          // 1-2 yellow/cheese → warm amber (#FFA020)
+          // 2-3 green → electric green (#20FF60)
+          // 3-5 cyan/blue → electric blue (#20A0FF)
+          // 5-6 magenta → hot pink (#FF20FF)
+          if (hue < 1.2) {
+            neonR[i] = 255; neonG[i] = 16; neonB[i] = 96;   // hot pink
+          } else if (hue < 2.2) {
+            neonR[i] = 255; neonG[i] = 160; neonB[i] = 32;  // amber
+          } else if (hue < 3.2) {
+            neonR[i] = 32;  neonG[i] = 255; neonB[i] = 96;  // green
+          } else if (hue < 5.0) {
+            neonR[i] = 32;  neonG[i] = 160; neonB[i] = 255; // blue
+          } else {
+            neonR[i] = 255; neonG[i] = 32;  neonB[i] = 255; // magenta
+          }
+        }
+
+        // 3. Build output: dark bg + neon edges + soft glow
+        // First pass: create raw neon image
+        const out = new Uint8ClampedArray(d.length);
+        for (let i = 0; i < w * h; i++) {
+          const p = i * 4;
+          const e = Math.min(1, edge[i] * invMax * 2.5); // boost edges
+          const brightness = e * e; // square for sharper cutoff
+          out[p]     = 8  + brightness * neonR[i];
+          out[p + 1] = 5  + brightness * neonG[i];
+          out[p + 2] = 20 + brightness * neonB[i];
+          out[p + 3] = d[p + 3]; // preserve alpha
+        }
+
+        // 4. Glow pass: simple 5×5 box blur of bright pixels, added on top
+        const glowRadius = 3;
+        const glowStrength = 0.18;
+        for (let y = glowRadius; y < h - glowRadius; y++) {
+          for (let x = glowRadius; x < w - glowRadius; x++) {
+            const ci = y * w + x;
+            const e = edge[ci] * invMax;
+            if (e < 0.15) continue; // skip non-edge pixels for performance
+            let sumR = 0, sumG = 0, sumB = 0;
+            for (let dy = -glowRadius; dy <= glowRadius; dy++) {
+              for (let dx = -glowRadius; dx <= glowRadius; dx++) {
+                const ni = (y + dy) * w + (x + dx);
+                const np = ni * 4;
+                sumR += out[np];
+                sumG += out[np + 1];
+                sumB += out[np + 2];
+              }
+            }
+            const count = (glowRadius * 2 + 1) ** 2;
+            const p = ci * 4;
+            out[p]     = Math.min(255, out[p]     + sumR / count * glowStrength);
+            out[p + 1] = Math.min(255, out[p + 1] + sumG / count * glowStrength);
+            out[p + 2] = Math.min(255, out[p + 2] + sumB / count * glowStrength);
+          }
+        }
+
+        // Write result
+        for (let i = 0; i < d.length; i++) d[i] = out[i];
+        ctx.putImageData(imageData, 0, 0);
+
+        // 5. Second glow layer via canvas shadow for wider bloom
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w;
+        tempCanvas.height = h;
+        const tCtx = tempCanvas.getContext('2d')!;
+        tCtx.drawImage(canvas, 0, 0);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.filter = 'blur(6px)';
+        ctx.globalAlpha = 0.45;
+        ctx.drawImage(tempCanvas, 0, 0);
+        ctx.restore();
+
+        // Redraw sharp edges on top of bloom
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.3;
+        ctx.drawImage(tempCanvas, 0, 0);
+        ctx.restore();
+      }
+    }
   }, [selectedToppings]);
 
   // Animation loop
@@ -523,16 +678,17 @@ export default function PizzaCanvas() {
     if (!animation) {
       // Static: draw once
       rotationRef.current = 0;
-      drawPizza(ctx, canvas, 0);
+      drawPizza(ctx, canvas, 0, undefined, filter);
       return;
     }
 
-    if (animation === 'wave') {
+    if (animation === 'wave' || animation === 'wave-ccw') {
+      const reverse = animation === 'wave-ccw';
       const startTime = performance.now() / 1000;
       const animate = () => {
         const elapsed = performance.now() / 1000 - startTime;
-        const offsets = getWaveOffsets(elapsed);
-        drawPizza(ctx, canvas, 0, offsets);
+        const offsets = getWaveOffsets(elapsed, reverse);
+        drawPizza(ctx, canvas, 0, offsets, filter);
         rafRef.current = requestAnimationFrame(animate);
       };
       rafRef.current = requestAnimationFrame(animate);
@@ -544,13 +700,13 @@ export default function PizzaCanvas() {
 
     const animate = () => {
       rotationRef.current += speed;
-      drawPizza(ctx, canvas, rotationRef.current);
+      drawPizza(ctx, canvas, rotationRef.current, undefined, filter);
       rafRef.current = requestAnimationFrame(animate);
     };
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [selectedToppings, animation, drawPizza]);
+  }, [selectedToppings, animation, filter, drawPizza]);
 
   const toggleTopping = (topping: string) => {
     setSelectedToppings((prev) => {
@@ -575,6 +731,7 @@ export default function PizzaCanvas() {
       name: pizzaName,
       toppings: Array.from(selectedToppings),
       animation: animation,
+      filter: filter,
     });
 
     if (result.error) {
@@ -591,6 +748,7 @@ export default function PizzaCanvas() {
   const handleLoadPizza = (pizza: SavedPizza) => {
     setSelectedToppings(new Set(pizza.toppings));
     setAnimation((pizza.animation as AnimationType) ?? null);
+    setFilter((pizza.filter as FilterType) ?? null);
   };
 
   const handleDeletePizza = async (pizzaId: string) => {
@@ -600,8 +758,12 @@ export default function PizzaCanvas() {
     }
   };
 
-  const toggleAnimation = (type: 'cw' | 'ccw' | 'wave') => {
+  const toggleAnimation = (type: 'cw' | 'ccw' | 'wave' | 'wave-ccw') => {
     setAnimation((prev) => (prev === type ? null : type));
+  };
+
+  const toggleFilter = (type: 'mono' | 'neon') => {
+    setFilter((prev) => (prev === type ? null : type));
   };
 
   const handleExportGif = async () => {
@@ -616,16 +778,17 @@ export default function PizzaCanvas() {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      if (animation === 'wave') {
+      if (animation === 'wave' || animation === 'wave-ccw') {
         // Wave: capture one full cycle
+        const reverse = animation === 'wave-ccw';
         const sliceDuration = 0.8;
         const stagger = 0.25 * sliceDuration;
         const cycleDuration = sliceDuration + 7 * stagger;
         const totalFrames = 80; // more frames for the longer cycle
         for (let i = 0; i < totalFrames; i++) {
           const t = (i / totalFrames) * cycleDuration;
-          const offsets = getWaveOffsets(t);
-          drawPizza(ctx, canvas, 0, offsets);
+          const offsets = getWaveOffsets(t, reverse);
+          drawPizza(ctx, canvas, 0, offsets, filter);
           const offscreen = document.createElement('canvas');
           offscreen.width = canvas.width;
           offscreen.height = canvas.height;
@@ -638,7 +801,7 @@ export default function PizzaCanvas() {
         const speed = animation === 'cw' ? (Math.PI * 2) / totalFrames : -(Math.PI * 2) / totalFrames;
         for (let i = 0; i < totalFrames; i++) {
           const angle = speed * i;
-          drawPizza(ctx, canvas, angle);
+          drawPizza(ctx, canvas, angle, undefined, filter);
           const offscreen = document.createElement('canvas');
           offscreen.width = canvas.width;
           offscreen.height = canvas.height;
@@ -648,7 +811,7 @@ export default function PizzaCanvas() {
       }
 
       // Restore current animation frame
-      drawPizza(ctx, canvas, rotationRef.current);
+      drawPizza(ctx, canvas, rotationRef.current, undefined, filter);
 
       const gif = await encode({
         width: canvas.width,
@@ -759,7 +922,46 @@ export default function PizzaCanvas() {
                       : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
                   }`}
                 >
-                  Wave 🍕
+                  Wave CW 🍕
+                </button>
+                <button
+                  onClick={() => toggleAnimation('wave-ccw')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    animation === 'wave-ccw'
+                      ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Wave CCW 🍕
+                </button>
+              </div>
+            </div>
+
+            {/* Visual Effects */}
+            <div>
+              <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
+                Visual Effects
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => toggleFilter('mono')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    filter === 'mono'
+                      ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Monochrome 🖤
+                </button>
+                <button
+                  onClick={() => toggleFilter('neon')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    filter === 'neon'
+                      ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Neon 💜
                 </button>
               </div>
             </div>
@@ -841,7 +1043,8 @@ export default function PizzaCanvas() {
                   </div>
                   <p className="text-xs text-stone-500 dark:text-zinc-400 mb-2">
                     {pizza.toppings.join(', ') || 'Plain cheese'}
-                    {pizza.animation && ` · ${pizza.animation === 'cw' ? '↻' : '↺'}`}
+                    {pizza.animation && ` · ${pizza.animation === 'cw' ? '↻' : pizza.animation === 'ccw' ? '↺' : '🍕'}`}
+                    {pizza.filter && ` · ${pizza.filter === 'mono' ? '🖤' : '💜'}`}
                   </p>
                   <button
                     onClick={() => handleLoadPizza(pizza)}

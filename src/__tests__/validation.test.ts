@@ -10,7 +10,8 @@ import { z } from 'zod';
 const pizzaSchema = z.object({
   name: z.string().min(1).max(50),
   toppings: z.array(z.string()).max(4),
-  animation: z.enum(['cw', 'ccw', 'wave']).nullable().optional(),
+  animation: z.enum(['cw', 'ccw', 'wave', 'wave-ccw']).nullable().optional(),
+  filter: z.enum(['mono', 'neon']).nullable().optional(),
 });
 
 const registerSchema = z.object({
@@ -93,6 +94,51 @@ describe('Pizza Validation Schema', () => {
       name: 'Bad',
       toppings: [],
       animation: 'spin',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts wave-ccw animation', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Reverse Wave',
+      toppings: ['pepperoni'],
+      animation: 'wave-ccw',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts valid filter value', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Mono Pizza',
+      toppings: ['mushroom'],
+      filter: 'mono',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts neon filter', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Neon Pizza',
+      toppings: [],
+      filter: 'neon',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts null filter', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Normal',
+      toppings: [],
+      filter: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid filter value', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Bad Filter',
+      toppings: [],
+      filter: 'sepia',
     });
     expect(result.success).toBe(false);
   });

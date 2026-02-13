@@ -8,7 +8,8 @@ import { z } from 'zod';
 const pizzaSchema = z.object({
   name: z.string().min(1).max(50),
   toppings: z.array(z.string()).max(4),
-  animation: z.enum(['cw', 'ccw', 'wave']).nullable().optional(),
+  animation: z.enum(['cw', 'ccw', 'wave', 'wave-ccw']).nullable().optional(),
+  filter: z.enum(['mono', 'neon']).nullable().optional(),
 });
 
 export async function getUserPizzas() {
@@ -32,6 +33,7 @@ export async function getUserPizzas() {
       ...pizza,
       toppings: JSON.parse(pizza.toppings) as string[],
       animation: pizza.animation as string | null,
+      filter: pizza.filter as string | null,
     }));
 
     return { pizzas };
@@ -41,7 +43,7 @@ export async function getUserPizzas() {
   }
 }
 
-export async function savePizza(data: { name: string; toppings: string[]; animation?: string | null }) {
+export async function savePizza(data: { name: string; toppings: string[]; animation?: string | null; filter?: string | null }) {
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -59,6 +61,7 @@ export async function savePizza(data: { name: string; toppings: string[]; animat
         name: validated.data.name,
         toppings: JSON.stringify(validated.data.toppings),
         animation: validated.data.animation ?? null,
+        filter: validated.data.filter ?? null,
         userId: session.user.id,
       },
     });
@@ -67,6 +70,7 @@ export async function savePizza(data: { name: string; toppings: string[]; animat
       ...rawPizza,
       toppings: JSON.parse(rawPizza.toppings) as string[],
       animation: rawPizza.animation,
+      filter: rawPizza.filter,
     };
 
     revalidatePath('/');
@@ -125,6 +129,7 @@ export async function loadPizza(pizzaId: string) {
       ...rawPizza,
       toppings: JSON.parse(rawPizza.toppings) as string[],
       animation: rawPizza.animation as string | null,
+      filter: rawPizza.filter as string | null,
     };
 
     return { pizza };
