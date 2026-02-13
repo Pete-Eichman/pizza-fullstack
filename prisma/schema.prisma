@@ -68,6 +68,7 @@ model Pizza {
   id        String   @id @default(cuid())
   name      String   // User's name for their pizza (e.g., "My Favorite")
   toppings  String   // JSON string of topping IDs: ["pepperoni", "mushroom", ...]
+  animation String?  // Animation type: "cw", "ccw", or null for none
   userId    String   // Owner of this pizza
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

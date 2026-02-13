@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { savePizza, getUserPizzas, deletePizza } from '@/app/actions/pizza';
+
+type AnimationType = 'cw' | 'ccw' | null;
 
 interface SavedPizza {
   id: string;
   name: string;
   toppings: string[];
+  animation: string | null;
   createdAt: Date;
 }
 
@@ -268,10 +271,14 @@ const TOPPING_CONFIGS: Record<string, ToppingConfig> = {
 export default function PizzaCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedToppings, setSelectedToppings] = useState<Set<string>>(new Set());
+  const [animation, setAnimation] = useState<AnimationType>(null);
   const [savedPizzas, setSavedPizzas] = useState<SavedPizza[]>([]);
   const [pizzaName, setPizzaName] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string>('');
+  const [exporting, setExporting] = useState(false);
+  const rotationRef = useRef(0);
+  const rafRef = useRef<number>(0);
 
   useEffect(() => {
     loadSavedPizzas();
@@ -284,13 +291,19 @@ export default function PizzaCanvas() {
     }
   };
 
-  const drawPizza = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+  const drawPizza = useCallback((ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, rotation = 0) => {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
     const pizzaRadius = 180;
     const numSlices = 8;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Apply rotation around center
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(rotation);
+    ctx.translate(-centerX, -centerY);
 
     // Draw crust
     ctx.beginPath();
@@ -374,15 +387,35 @@ export default function PizzaCanvas() {
       );
       ctx.stroke();
     }
-  };
 
+    ctx.restore();
+  }, [selectedToppings]);
+
+  // Animation loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
-    if (ctx) drawPizza(ctx, canvas);
-  }, [selectedToppings]);
+    if (!ctx) return;
+
+    if (!animation) {
+      // Static: draw once
+      rotationRef.current = 0;
+      drawPizza(ctx, canvas, 0);
+      return;
+    }
+
+    const speed = animation === 'cw' ? 0.008 : -0.008;
+
+    const animate = () => {
+      rotationRef.current += speed;
+      drawPizza(ctx, canvas, rotationRef.current);
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [selectedToppings, animation, drawPizza]);
 
   const toggleTopping = (topping: string) => {
     setSelectedToppings((prev) => {
@@ -406,6 +439,7 @@ export default function PizzaCanvas() {
     const result = await savePizza({
       name: pizzaName,
       toppings: Array.from(selectedToppings),
+      animation: animation,
     });
 
     if (result.error) {
@@ -421,12 +455,70 @@ export default function PizzaCanvas() {
 
   const handleLoadPizza = (pizza: SavedPizza) => {
     setSelectedToppings(new Set(pizza.toppings));
+    setAnimation((pizza.animation as AnimationType) ?? null);
   };
 
   const handleDeletePizza = async (pizzaId: string) => {
     const result = await deletePizza(pizzaId);
     if (!result.error) {
       loadSavedPizzas();
+    }
+  };
+
+  const toggleAnimation = (type: 'cw' | 'ccw') => {
+    setAnimation((prev) => (prev === type ? null : type));
+  };
+
+  const handleExportGif = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !animation) return;
+
+    setExporting(true);
+    try {
+      const { encode } = await import('modern-gif');
+
+      const frames: Array<{ data: CanvasImageSource; delay: number }> = [];
+      const totalFrames = 60;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const speed = animation === 'cw' ? (Math.PI * 2) / totalFrames : -(Math.PI * 2) / totalFrames;
+
+      // Create an offscreen canvas for each frame
+      for (let i = 0; i < totalFrames; i++) {
+        const angle = speed * i;
+        drawPizza(ctx, canvas, angle);
+        const offscreen = document.createElement('canvas');
+        offscreen.width = canvas.width;
+        offscreen.height = canvas.height;
+        const offCtx = offscreen.getContext('2d')!;
+        offCtx.drawImage(canvas, 0, 0);
+        frames.push({ data: offscreen, delay: 33 }); // ~30fps
+      }
+
+      // Restore current animation frame
+      drawPizza(ctx, canvas, rotationRef.current);
+
+      const gif = await encode({
+        width: canvas.width,
+        height: canvas.height,
+        frames,
+      });
+
+      // Download
+      const blob = new Blob([gif], { type: 'image/gif' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pizza.gif';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('GIF export failed:', error);
+      setSaveStatus('GIF export failed');
+      setTimeout(() => setSaveStatus(''), 3000);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -482,12 +574,52 @@ export default function PizzaCanvas() {
               </div>
             </div>
 
-            <button
-              onClick={() => setShowSaveDialog(true)}
-              className="w-full bg-blue-600 text-white font-medium py-3 px-6 rounded-lg hover:bg-blue-700 dark:bg-amber-600 dark:hover:bg-amber-700 transition-colors"
-            >
-              Save Pizza
-            </button>
+            {/* Animation Selection */}
+            <div>
+              <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
+                Animation
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => toggleAnimation('cw')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    animation === 'cw'
+                      ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Rotate CW ↻
+                </button>
+                <button
+                  onClick={() => toggleAnimation('ccw')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    animation === 'ccw'
+                      ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                  }`}
+                >
+                  Rotate CCW ↺
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSaveDialog(true)}
+                className="flex-1 bg-blue-600 text-white font-medium py-3 px-6 rounded-lg hover:bg-blue-700 dark:bg-amber-600 dark:hover:bg-amber-700 transition-colors"
+              >
+                Save Pizza
+              </button>
+              {animation && (
+                <button
+                  onClick={handleExportGif}
+                  disabled={exporting}
+                  className="bg-emerald-600 text-white font-medium py-3 px-6 rounded-lg hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {exporting ? 'Exporting...' : 'Export GIF'}
+                </button>
+              )}
+            </div>
           </div>
 
           {saveStatus && (
@@ -548,6 +680,7 @@ export default function PizzaCanvas() {
                   </div>
                   <p className="text-xs text-stone-500 dark:text-zinc-400 mb-2">
                     {pizza.toppings.join(', ') || 'Plain cheese'}
+                    {pizza.animation && ` · ${pizza.animation === 'cw' ? '↻' : '↺'}`}
                   </p>
                   <button
                     onClick={() => handleLoadPizza(pizza)}

@@ -23,11 +23,17 @@ HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
   closePath: vi.fn(),
   ellipse: vi.fn(),
   quadraticCurveTo: vi.fn(),
+  save: vi.fn(),
+  restore: vi.fn(),
+  translate: vi.fn(),
+  rotate: vi.fn(),
+  getImageData: vi.fn().mockReturnValue({ data: new Uint8ClampedArray(500 * 500 * 4) }),
   fillStyle: '',
   strokeStyle: '',
   lineWidth: 0,
   globalAlpha: 1,
   lineCap: 'butt',
+  lineJoin: 'miter',
 });
 
 import { savePizza, getUserPizzas, deletePizza } from '@/app/actions/pizza';
@@ -78,6 +84,37 @@ describe('PizzaCanvas', () => {
 
     // Counter should show 4/4
     expect(screen.getByText('4/4 selected')).toBeInTheDocument();
+  });
+
+  it('renders animation buttons', () => {
+    render(<PizzaCanvas />);
+    expect(screen.getByText('Rotate CW ↻')).toBeInTheDocument();
+    expect(screen.getByText('Rotate CCW ↺')).toBeInTheDocument();
+  });
+
+  it('toggles animation selection', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    const cwBtn = screen.getByText('Rotate CW ↻');
+    expect(cwBtn.className).toContain('bg-stone-100');
+
+    await user.click(cwBtn);
+    expect(cwBtn.className).toContain('bg-stone-800');
+
+    // Click again to deselect
+    await user.click(cwBtn);
+    expect(cwBtn.className).toContain('bg-stone-100');
+  });
+
+  it('shows Export GIF button only when animation is active', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    expect(screen.queryByText('Export GIF')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Rotate CW ↻'));
+    expect(screen.getByText('Export GIF')).toBeInTheDocument();
   });
 
   it('toggles topping selection on click', async () => {
@@ -151,6 +188,7 @@ describe('PizzaCanvas', () => {
       expect(savePizza).toHaveBeenCalledWith({
         name: 'My Pizza',
         toppings: ['pepperoni'],
+        animation: null,
       });
     });
   });
@@ -158,8 +196,8 @@ describe('PizzaCanvas', () => {
   it('renders saved pizzas list', async () => {
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Margherita', toppings: ['mushroom'], createdAt: new Date() },
-        { id: '2', name: 'Supreme', toppings: ['pepperoni', 'olive'], createdAt: new Date() },
+        { id: '1', name: 'Margherita', toppings: ['mushroom'], animation: null, createdAt: new Date() },
+        { id: '2', name: 'Supreme', toppings: ['pepperoni', 'olive'], animation: null, createdAt: new Date() },
       ],
     });
 
@@ -181,7 +219,7 @@ describe('PizzaCanvas', () => {
     const user = userEvent.setup();
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Test Pizza', toppings: ['pepperoni', 'olive'], createdAt: new Date() },
+        { id: '1', name: 'Test Pizza', toppings: ['pepperoni', 'olive'], animation: null, createdAt: new Date() },
       ],
     });
 
@@ -204,7 +242,7 @@ describe('PizzaCanvas', () => {
     const user = userEvent.setup();
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: 'abc-123', name: 'Delete Me', toppings: [], createdAt: new Date() },
+        { id: 'abc-123', name: 'Delete Me', toppings: [], animation: null, createdAt: new Date() },
       ],
     });
 
@@ -224,8 +262,8 @@ describe('PizzaCanvas', () => {
   it('displays toppings summary for saved pizza or plain cheese', async () => {
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Cheese Only', toppings: [], createdAt: new Date() },
-        { id: '2', name: 'Loaded', toppings: ['pepperoni', 'olive'], createdAt: new Date() },
+        { id: '1', name: 'Cheese Only', toppings: [], animation: null, createdAt: new Date() },
+        { id: '2', name: 'Loaded', toppings: ['pepperoni', 'olive'], animation: 'cw', createdAt: new Date() },
       ],
     });
 
@@ -233,7 +271,7 @@ describe('PizzaCanvas', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Plain cheese')).toBeInTheDocument();
-      expect(screen.getByText('pepperoni, olive')).toBeInTheDocument();
+      expect(screen.getByText('pepperoni, olive · ↻')).toBeInTheDocument();
     });
   });
 });

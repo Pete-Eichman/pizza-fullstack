@@ -10,6 +10,7 @@ import { z } from 'zod';
 const pizzaSchema = z.object({
   name: z.string().min(1).max(50),
   toppings: z.array(z.string()).max(4),
+  animation: z.enum(['cw', 'ccw']).nullable().optional(),
 });
 
 const registerSchema = z.object({
@@ -66,6 +67,33 @@ describe('Pizza Validation Schema', () => {
 
   it('rejects missing toppings field', () => {
     const result = pizzaSchema.safeParse({ name: 'Test' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts valid animation value', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Spinner',
+      toppings: ['pepperoni'],
+      animation: 'cw',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts null animation', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Static',
+      toppings: [],
+      animation: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid animation value', () => {
+    const result = pizzaSchema.safeParse({
+      name: 'Bad',
+      toppings: [],
+      animation: 'spin',
+    });
     expect(result.success).toBe(false);
   });
 });
