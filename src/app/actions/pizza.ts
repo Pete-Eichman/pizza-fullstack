@@ -8,6 +8,9 @@ import { z } from 'zod';
 const pizzaSchema = z.object({
   name: z.string().min(1).max(50),
   toppings: z.array(z.string()).max(4),
+  mode: z.enum(['whole', 'half']).optional().default('whole'),
+  leftToppings: z.array(z.string()).max(4).optional().default([]),
+  rightToppings: z.array(z.string()).max(4).optional().default([]),
   animation: z.enum(['cw', 'ccw', 'wave', 'wave-ccw']).nullable().optional(),
   filter: z.enum(['mono', 'neon']).nullable().optional(),
 });
@@ -32,6 +35,9 @@ export async function getUserPizzas() {
     const pizzas = rawPizzas.map((pizza: any) => ({
       ...pizza,
       toppings: JSON.parse(pizza.toppings) as string[],
+      mode: (pizza.mode ?? 'whole') as string,
+      leftToppings: pizza.leftToppings ? JSON.parse(pizza.leftToppings) as string[] : [],
+      rightToppings: pizza.rightToppings ? JSON.parse(pizza.rightToppings) as string[] : [],
       animation: pizza.animation as string | null,
       filter: pizza.filter as string | null,
     }));
@@ -43,7 +49,15 @@ export async function getUserPizzas() {
   }
 }
 
-export async function savePizza(data: { name: string; toppings: string[]; animation?: string | null; filter?: string | null }) {
+export async function savePizza(data: {
+  name: string;
+  toppings: string[];
+  mode?: string;
+  leftToppings?: string[];
+  rightToppings?: string[];
+  animation?: string | null;
+  filter?: string | null;
+}) {
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -60,6 +74,9 @@ export async function savePizza(data: { name: string; toppings: string[]; animat
       data: {
         name: validated.data.name,
         toppings: JSON.stringify(validated.data.toppings),
+        mode: validated.data.mode,
+        leftToppings: validated.data.leftToppings.length > 0 ? JSON.stringify(validated.data.leftToppings) : null,
+        rightToppings: validated.data.rightToppings.length > 0 ? JSON.stringify(validated.data.rightToppings) : null,
         animation: validated.data.animation ?? null,
         filter: validated.data.filter ?? null,
         userId: session.user.id,
@@ -69,6 +86,9 @@ export async function savePizza(data: { name: string; toppings: string[]; animat
     const pizza = {
       ...rawPizza,
       toppings: JSON.parse(rawPizza.toppings) as string[],
+      mode: rawPizza.mode as string,
+      leftToppings: rawPizza.leftToppings ? JSON.parse(rawPizza.leftToppings) as string[] : [],
+      rightToppings: rawPizza.rightToppings ? JSON.parse(rawPizza.rightToppings) as string[] : [],
       animation: rawPizza.animation,
       filter: rawPizza.filter,
     };

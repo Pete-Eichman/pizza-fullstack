@@ -217,6 +217,9 @@ describe('PizzaCanvas', () => {
       expect(savePizza).toHaveBeenCalledWith({
         name: 'My Pizza',
         toppings: ['pepperoni'],
+        mode: 'whole',
+        leftToppings: [],
+        rightToppings: [],
         animation: null,
         filter: null,
       });
@@ -226,8 +229,8 @@ describe('PizzaCanvas', () => {
   it('renders saved pizzas list', async () => {
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Margherita', toppings: ['mushroom'], animation: null, filter: null, createdAt: new Date() },
-        { id: '2', name: 'Supreme', toppings: ['pepperoni', 'olive'], animation: null, filter: null, createdAt: new Date() },
+        { id: '1', name: 'Margherita', toppings: ['mushroom'], mode: 'whole', leftToppings: [], rightToppings: [], animation: null, filter: null, createdAt: new Date() },
+        { id: '2', name: 'Supreme', toppings: ['pepperoni', 'olive'], mode: 'whole', leftToppings: [], rightToppings: [], animation: null, filter: null, createdAt: new Date() },
       ],
     });
 
@@ -249,7 +252,7 @@ describe('PizzaCanvas', () => {
     const user = userEvent.setup();
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Test Pizza', toppings: ['pepperoni', 'olive'], animation: null, filter: null, createdAt: new Date() },
+        { id: '1', name: 'Test Pizza', toppings: ['pepperoni', 'olive'], mode: 'whole', leftToppings: [], rightToppings: [], animation: null, filter: null, createdAt: new Date() },
       ],
     });
 
@@ -272,7 +275,7 @@ describe('PizzaCanvas', () => {
     const user = userEvent.setup();
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: 'abc-123', name: 'Delete Me', toppings: [], animation: null, filter: null, createdAt: new Date() },
+        { id: 'abc-123', name: 'Delete Me', toppings: [], mode: 'whole', leftToppings: [], rightToppings: [], animation: null, filter: null, createdAt: new Date() },
       ],
     });
 
@@ -292,8 +295,8 @@ describe('PizzaCanvas', () => {
   it('displays toppings summary for saved pizza or plain cheese', async () => {
     vi.mocked(getUserPizzas).mockResolvedValue({
       pizzas: [
-        { id: '1', name: 'Cheese Only', toppings: [], animation: null, filter: null, createdAt: new Date() },
-        { id: '2', name: 'Loaded', toppings: ['pepperoni', 'olive'], animation: 'cw', filter: null, createdAt: new Date() },
+        { id: '1', name: 'Cheese Only', toppings: [], mode: 'whole', leftToppings: [], rightToppings: [], animation: null, filter: null, createdAt: new Date() },
+        { id: '2', name: 'Loaded', toppings: ['pepperoni', 'olive'], mode: 'whole', leftToppings: [], rightToppings: [], animation: 'cw', filter: null, createdAt: new Date() },
       ],
     });
 
@@ -302,6 +305,188 @@ describe('PizzaCanvas', () => {
     await waitFor(() => {
       expect(screen.getByText('Plain cheese')).toBeInTheDocument();
       expect(screen.getByText('pepperoni, olive · ↻')).toBeInTheDocument();
+    });
+  });
+
+  // ── Pizza mode toggle tests ──────────────────────────────────────────────
+
+  it('renders pizza style toggle buttons', () => {
+    render(<PizzaCanvas />);
+    expect(screen.getByText('Whole')).toBeInTheDocument();
+    expect(screen.getByText('Half & Half')).toBeInTheDocument();
+  });
+
+  it('defaults to whole pizza mode', () => {
+    render(<PizzaCanvas />);
+    const wholeBtn = screen.getByText('Whole');
+    expect(wholeBtn.className).toContain('bg-stone-800');
+  });
+
+  it('switches to half mode and shows two topping sections', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    await user.click(screen.getByText('Half & Half'));
+
+    expect(screen.getByText('Left Half')).toBeInTheDocument();
+    expect(screen.getByText('Right Half')).toBeInTheDocument();
+    // Should show two counters
+    const counters = screen.getAllByText('0/4 selected');
+    expect(counters.length).toBe(2);
+  });
+
+  it('hides whole topping section when in half mode', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    // In whole mode, "Toppings" label should exist
+    expect(screen.getByText('Toppings')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Half & Half'));
+
+    // "Toppings" label should be replaced by "Left Half" and "Right Half"
+    expect(screen.queryByText('Toppings')).not.toBeInTheDocument();
+    expect(screen.getByText('Left Half')).toBeInTheDocument();
+    expect(screen.getByText('Right Half')).toBeInTheDocument();
+  });
+
+  it('allows selecting toppings independently on each half', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    await user.click(screen.getByText('Half & Half'));
+
+    // In half mode, each topping appears twice (once per half)
+    const pepperoniBtns = screen.getAllByText('Pepperoni');
+    expect(pepperoniBtns.length).toBe(2);
+
+    // Select pepperoni on left half
+    await user.click(pepperoniBtns[0]);
+    expect(pepperoniBtns[0].className).toContain('bg-stone-800');
+    // Right half pepperoni should remain unselected
+    expect(pepperoniBtns[1].className).toContain('bg-stone-100');
+  });
+
+  it('enforces 4 topping max per half independently', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    await user.click(screen.getByText('Half & Half'));
+
+    // Select 4 toppings on the left half (first instance of each)
+    const leftPepperoni = screen.getAllByText('Pepperoni')[0];
+    const leftMushrooms = screen.getAllByText('Mushrooms')[0];
+    const leftOlives = screen.getAllByText('Olives')[0];
+    const leftBacon = screen.getAllByText('Bacon')[0];
+
+    await user.click(leftPepperoni);
+    await user.click(leftMushrooms);
+    await user.click(leftOlives);
+    await user.click(leftBacon);
+
+    // Left half should show 4/4
+    const counters = screen.getAllByText(/\/4 selected/);
+    expect(counters[0].textContent).toBe('4/4 selected');
+
+    // Right half should still have 0/4 and not be blocked
+    expect(counters[1].textContent).toBe('0/4 selected');
+
+    // Can still select toppings on the right half
+    const rightPepperoni = screen.getAllByText('Pepperoni')[1];
+    expect(rightPepperoni).not.toBeDisabled();
+  });
+
+  it('saves half pizza with correct data', async () => {
+    const user = userEvent.setup();
+    vi.mocked(savePizza).mockResolvedValue({
+      pizza: { id: '1', name: 'Half Special', toppings: '[]' } as any,
+    });
+
+    render(<PizzaCanvas />);
+
+    await user.click(screen.getByText('Half & Half'));
+
+    // Select pepperoni on left
+    const leftPepperoni = screen.getAllByText('Pepperoni')[0];
+    await user.click(leftPepperoni);
+
+    // Select mushrooms on right
+    const rightMushrooms = screen.getAllByText('Mushrooms')[1];
+    await user.click(rightMushrooms);
+
+    await user.click(screen.getByText('Save Pizza'));
+    await user.type(screen.getByPlaceholderText(/friday night special/i), 'Half Special');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(savePizza).toHaveBeenCalledWith({
+        name: 'Half Special',
+        toppings: [],
+        mode: 'half',
+        leftToppings: ['pepperoni'],
+        rightToppings: ['mushroom'],
+        animation: null,
+        filter: null,
+      });
+    });
+  });
+
+  it('loads a half pizza and restores mode and toppings', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserPizzas).mockResolvedValue({
+      pizzas: [
+        {
+          id: '1',
+          name: 'Half Loaded',
+          toppings: [],
+          mode: 'half',
+          leftToppings: ['pepperoni', 'olive'],
+          rightToppings: ['mushroom'],
+          animation: null,
+          filter: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    render(<PizzaCanvas />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Half Loaded')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText('Load'));
+
+    // Should switch to half mode
+    const halfBtn = screen.getByText('Half & Half');
+    expect(halfBtn.className).toContain('bg-stone-800');
+
+    // Left half and right half sections should appear
+    expect(screen.getByText('Left Half')).toBeInTheDocument();
+    expect(screen.getByText('Right Half')).toBeInTheDocument();
+  });
+
+  it('displays half pizza summary in saved list', async () => {
+    vi.mocked(getUserPizzas).mockResolvedValue({
+      pizzas: [
+        {
+          id: '1',
+          name: 'Split Pizza',
+          toppings: [],
+          mode: 'half',
+          leftToppings: ['pepperoni'],
+          rightToppings: ['mushroom'],
+          animation: null,
+          filter: null,
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    render(<PizzaCanvas />);
+
+    await waitFor(() => {
+      expect(screen.getByText('L: pepperoni | R: mushroom')).toBeInTheDocument();
     });
   });
 });

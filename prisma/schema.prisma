@@ -65,15 +65,18 @@ model VerificationToken {
 
 // Pizza model - user's saved pizza configurations
 model Pizza {
-  id        String   @id @default(cuid())
-  name      String   // User's name for their pizza (e.g., "My Favorite")
-  toppings  String   // JSON string of topping IDs: ["pepperoni", "mushroom", ...]
-  animation String?  // Animation type: "cw", "ccw", "wave", "wave-ccw", or null
-  filter    String?  // Visual filter: "mono", "neon", or null
-  userId    String   // Owner of this pizza
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
+  id            String   @id @default(cuid())
+  name          String   // User's name for their pizza (e.g., "My Favorite")
+  toppings      String   // JSON string of topping IDs: ["pepperoni", "mushroom", ...]
+  mode          String   @default("whole") // "whole" or "half"
+  leftToppings  String?  // JSON string of left-half topping IDs (half mode only)
+  rightToppings String?  // JSON string of right-half topping IDs (half mode only)
+  animation     String?  // Animation type: "cw", "ccw", "wave", "wave-ccw", or null
+  filter        String?  // Visual filter: "mono", "neon", or null
+  userId        String   // Owner of this pizza
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
   @@index([userId, createdAt])
 }

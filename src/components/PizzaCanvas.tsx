@@ -3,9 +3,10 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { savePizza, getUserPizzas, deletePizza } from '@/app/actions/pizza';
 import { drawPizza } from '@/lib/pizzaRenderer';
+import type { HalfPizzaInfo } from '@/lib/pizzaRenderer';
 import { getWaveOffsets } from '@/lib/animation';
 import { TOPPING_CONFIGS, MAX_TOPPINGS } from '@/lib/toppings';
-import type { AnimationType, FilterType, SavedPizza } from '@/types/pizza';
+import type { AnimationType, FilterType, PizzaMode, SavedPizza } from '@/types/pizza';
 
 // ── Reusable pill-shaped toggle button ───────────────────────────────────────
 
@@ -37,11 +38,57 @@ function ToggleButton({
   );
 }
 
+// ── Topping selector section (reused for whole, left-half, right-half) ──────
+
+function ToppingSelector({
+  label,
+  toppings,
+  max,
+  onToggle,
+}: {
+  label: string;
+  toppings: Set<string>;
+  max: number;
+  onToggle: (topping: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider">
+          {label}
+        </p>
+        <p className={`text-xs font-medium ${
+          toppings.size >= max
+            ? 'text-amber-600 dark:text-amber-400'
+            : 'text-stone-400 dark:text-zinc-500'
+        }`}>
+          {toppings.size}/{max} selected
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(TOPPING_CONFIGS).map(([id, config]) => (
+          <ToggleButton
+            key={id}
+            active={toppings.has(id)}
+            disabled={!toppings.has(id) && toppings.size >= max}
+            onClick={() => onToggle(id)}
+          >
+            {config.label}
+          </ToggleButton>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function PizzaCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [mode, setMode] = useState<PizzaMode>('whole');
   const [selectedToppings, setSelectedToppings] = useState<Set<string>>(new Set());
+  const [leftToppings, setLeftToppings] = useState<Set<string>>(new Set());
+  const [rightToppings, setRightToppings] = useState<Set<string>>(new Set());
   const [animation, setAnimation] = useState<AnimationType>(null);
   const [filter, setFilter] = useState<FilterType>(null);
   const [savedPizzas, setSavedPizzas] = useState<SavedPizza[]>([]);
@@ -61,13 +108,19 @@ export default function PizzaCanvas() {
 
   useEffect(() => { loadSavedPizzas(); }, [loadSavedPizzas]);
 
+  // ── Build half-pizza info for the renderer ────────────────────────────────
+
+  const halfInfo: HalfPizzaInfo | undefined = mode === 'half'
+    ? { leftToppings, rightToppings }
+    : undefined;
+
   // ── Stable draw callback ───────────────────────────────────────────────────
 
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, rotation = 0, sliceOffsets?: number[]) => {
-      drawPizza(ctx, canvas, selectedToppings, rotation, sliceOffsets, filter);
+      drawPizza(ctx, canvas, selectedToppings, rotation, sliceOffsets, filter, mode, halfInfo);
     },
-    [selectedToppings, filter],
+    [selectedToppings, filter, mode, halfInfo],
   );
 
   // ── Animation loop ─────────────────────────────────────────────────────────
@@ -117,6 +170,24 @@ export default function PizzaCanvas() {
     });
   };
 
+  const toggleLeftTopping = (topping: string) => {
+    setLeftToppings(prev => {
+      const next = new Set(prev);
+      if (next.has(topping)) next.delete(topping);
+      else if (next.size < MAX_TOPPINGS) next.add(topping);
+      return next;
+    });
+  };
+
+  const toggleRightTopping = (topping: string) => {
+    setRightToppings(prev => {
+      const next = new Set(prev);
+      if (next.has(topping)) next.delete(topping);
+      else if (next.size < MAX_TOPPINGS) next.add(topping);
+      return next;
+    });
+  };
+
   const toggleAnimation = (type: AnimationType & string) =>
     setAnimation(prev => (prev === type ? null : type));
 
@@ -131,7 +202,10 @@ export default function PizzaCanvas() {
     setSaveStatus('Saving...');
     const result = await savePizza({
       name: pizzaName,
-      toppings: Array.from(selectedToppings),
+      toppings: mode === 'whole' ? Array.from(selectedToppings) : [],
+      mode,
+      leftToppings: mode === 'half' ? Array.from(leftToppings) : [],
+      rightToppings: mode === 'half' ? Array.from(rightToppings) : [],
       animation,
       filter,
     });
@@ -147,7 +221,17 @@ export default function PizzaCanvas() {
   };
 
   const handleLoadPizza = (pizza: SavedPizza) => {
-    setSelectedToppings(new Set(pizza.toppings));
+    const pizzaMode = (pizza.mode ?? 'whole') as PizzaMode;
+    setMode(pizzaMode);
+    if (pizzaMode === 'half') {
+      setLeftToppings(new Set(pizza.leftToppings ?? []));
+      setRightToppings(new Set(pizza.rightToppings ?? []));
+      setSelectedToppings(new Set());
+    } else {
+      setSelectedToppings(new Set(pizza.toppings));
+      setLeftToppings(new Set());
+      setRightToppings(new Set());
+    }
     setAnimation((pizza.animation as AnimationType) ?? null);
     setFilter((pizza.filter as FilterType) ?? null);
   };
@@ -215,6 +299,18 @@ export default function PizzaCanvas() {
     }
   };
 
+  // ── Helper: describe saved pizza toppings ──────────────────────────────────
+
+  const describePizzaToppings = (pizza: SavedPizza): string => {
+    const pizzaMode = pizza.mode ?? 'whole';
+    if (pizzaMode === 'half') {
+      const left = (pizza.leftToppings ?? []).join(', ') || 'plain';
+      const right = (pizza.rightToppings ?? []).join(', ') || 'plain';
+      return `L: ${left} | R: ${right}`;
+    }
+    return pizza.toppings.join(', ') || 'Plain cheese';
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -232,33 +328,52 @@ export default function PizzaCanvas() {
           />
 
           <div className="space-y-5">
-            {/* Toppings */}
+            {/* Pizza Mode */}
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider">
-                  Toppings
-                </p>
-                <p className={`text-xs font-medium ${
-                  selectedToppings.size >= MAX_TOPPINGS
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-stone-400 dark:text-zinc-500'
-                }`}>
-                  {selectedToppings.size}/{MAX_TOPPINGS} selected
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(TOPPING_CONFIGS).map(([id, config]) => (
-                  <ToggleButton
-                    key={id}
-                    active={selectedToppings.has(id)}
-                    disabled={!selectedToppings.has(id) && selectedToppings.size >= MAX_TOPPINGS}
-                    onClick={() => toggleTopping(id)}
-                  >
-                    {config.label}
-                  </ToggleButton>
-                ))}
+              <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
+                Pizza Style
+              </p>
+              <div className="flex gap-2">
+                <ToggleButton active={mode === 'whole'} onClick={() => setMode('whole')}>
+                  Whole
+                </ToggleButton>
+                <ToggleButton active={mode === 'half'} onClick={() => setMode('half')}>
+                  Half &amp; Half
+                </ToggleButton>
               </div>
             </div>
+
+            {/* Toppings — whole mode */}
+            {mode === 'whole' && (
+              <ToppingSelector
+                label="Toppings"
+                toppings={selectedToppings}
+                max={MAX_TOPPINGS}
+                onToggle={toggleTopping}
+              />
+            )}
+
+            {/* Toppings — half mode */}
+            {mode === 'half' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg border border-stone-200 dark:border-zinc-600 bg-stone-50/50 dark:bg-zinc-700/30">
+                  <ToppingSelector
+                    label="Left Half"
+                    toppings={leftToppings}
+                    max={MAX_TOPPINGS}
+                    onToggle={toggleLeftTopping}
+                  />
+                </div>
+                <div className="p-4 rounded-lg border border-stone-200 dark:border-zinc-600 bg-stone-50/50 dark:bg-zinc-700/30">
+                  <ToppingSelector
+                    label="Right Half"
+                    toppings={rightToppings}
+                    max={MAX_TOPPINGS}
+                    onToggle={toggleRightTopping}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Animation */}
             <div>
@@ -368,7 +483,7 @@ export default function PizzaCanvas() {
                     </button>
                   </div>
                   <p className="text-xs text-stone-500 dark:text-zinc-400 mb-2">
-                    {pizza.toppings.join(', ') || 'Plain cheese'}
+                    {describePizzaToppings(pizza)}
                     {pizza.animation && ` · ${pizza.animation === 'cw' ? '↻' : pizza.animation === 'ccw' ? '↺' : '🍕'}`}
                     {pizza.filter && ` · ${pizza.filter === 'mono' ? '🖤' : '💜'}`}
                   </p>

@@ -6,7 +6,7 @@
  * monochrome filter, and wave/rotation transforms.
  */
 
-import type { FilterType } from '@/types/pizza';
+import type { FilterType, PizzaMode } from '@/types/pizza';
 import {
   TOPPING_CONFIGS,
   SLICE_POSITIONS,
@@ -22,6 +22,20 @@ const PIZZA_RADIUS = 180;
 const MIN_R = 40;
 const MAX_R = 155;
 
+// Vertical split: left half = slices whose midpoints point left,
+// right half = slices whose midpoints point right.
+// Slice 0 starts at angle 0 (3 o'clock). The split line runs through
+// angles π/2 (6 o'clock) and 3π/2 (12 o'clock).
+const LEFT_SLICES = new Set([2, 3, 4, 5]);
+const RIGHT_SLICES = new Set([0, 1, 6, 7]);
+
+// ── Half-pizza topping info passed through the renderer ─────────────────────
+
+export interface HalfPizzaInfo {
+  leftToppings: ReadonlySet<string>;
+  rightToppings: ReadonlySet<string>;
+}
+
 // ── Helpers: front / back face drawing ───────────────────────────────────────
 
 function drawContent(
@@ -29,6 +43,8 @@ function drawContent(
   centerX: number,
   centerY: number,
   selectedToppings: ReadonlySet<string>,
+  mode: PizzaMode = 'whole',
+  halfInfo?: HalfPizzaInfo,
 ) {
   // Crust
   ctx.beginPath();
@@ -59,7 +75,44 @@ function drawContent(
   ctx.stroke();
 
   // Toppings
-  const toppingArray = Array.from(selectedToppings);
+  if (mode === 'whole') {
+    drawToppingsOnSlices(ctx, centerX, centerY, selectedToppings, [0, 1, 2, 3, 4, 5, 6, 7]);
+  } else if (halfInfo) {
+    drawToppingsOnSlices(ctx, centerX, centerY, halfInfo.leftToppings, [2, 3, 4, 5]);
+    drawToppingsOnSlices(ctx, centerX, centerY, halfInfo.rightToppings, [0, 1, 6, 7]);
+  }
+
+  // Slice lines
+  ctx.strokeStyle = '#C8874A';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < NUM_SLICES; i++) {
+    const angle = i * SLICE_WIDTH;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(centerX + Math.cos(angle) * PIZZA_RADIUS, centerY + Math.sin(angle) * PIZZA_RADIUS);
+    ctx.stroke();
+  }
+
+  // Half-pizza divider line (thicker line along the vertical split)
+  if (mode === 'half') {
+    ctx.strokeStyle = '#A06030';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(centerX + Math.cos(Math.PI / 2) * PIZZA_RADIUS, centerY + Math.sin(Math.PI / 2) * PIZZA_RADIUS);
+    ctx.lineTo(centerX + Math.cos(3 * Math.PI / 2) * PIZZA_RADIUS, centerY + Math.sin(3 * Math.PI / 2) * PIZZA_RADIUS);
+    ctx.stroke();
+  }
+}
+
+/** Render positioned + overlay toppings only onto the given slice indices. */
+function drawToppingsOnSlices(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  toppings: ReadonlySet<string>,
+  slices: number[],
+) {
+  const toppingArray = Array.from(toppings);
   const positioned = toppingArray.filter(t => TOPPING_CONFIGS[t]?.type === 'positioned');
   const overlays = toppingArray.filter(t => TOPPING_CONFIGS[t]?.type === 'overlay');
   const positionSets = distributePositions(positioned.length);
@@ -69,7 +122,7 @@ function drawContent(
     if (!config || config.type !== 'positioned') return;
     const positions = positionSets[tIdx] ?? [];
 
-    for (let s = 0; s < NUM_SLICES; s++) {
+    for (const s of slices) {
       const sliceStart = s * SLICE_WIDTH;
       positions.forEach(posIndex => {
         const pos = SLICE_POSITIONS[posIndex];
@@ -83,21 +136,10 @@ function drawContent(
   overlays.forEach(topping => {
     const config = TOPPING_CONFIGS[topping];
     if (!config || config.type !== 'overlay') return;
-    for (let s = 0; s < NUM_SLICES; s++) {
+    for (const s of slices) {
       config.renderSlice(ctx, centerX, centerY, s * SLICE_WIDTH, SLICE_WIDTH, MIN_R, MAX_R);
     }
   });
-
-  // Slice lines
-  ctx.strokeStyle = '#C8874A';
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < NUM_SLICES; i++) {
-    const angle = i * SLICE_WIDTH;
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.lineTo(centerX + Math.cos(angle) * PIZZA_RADIUS, centerY + Math.sin(angle) * PIZZA_RADIUS);
-    ctx.stroke();
-  }
 }
 
 function drawBackFace(
@@ -167,6 +209,8 @@ function drawZoneContent(
   centerX: number,
   centerY: number,
   selectedToppings: ReadonlySet<string>,
+  mode: PizzaMode = 'whole',
+  halfInfo?: HalfPizzaInfo,
 ) {
   // Crust
   z.beginPath();
@@ -194,8 +238,35 @@ function drawZoneContent(
   z.arc(centerX, centerY, PIZZA_RADIUS - 15, 0, Math.PI * 2);
   z.stroke();
 
-  // Positioned toppings (simple circles)
-  const toppingArr = Array.from(selectedToppings);
+  // Toppings
+  if (mode === 'whole') {
+    drawZoneToppingsOnSlices(z, centerX, centerY, selectedToppings, [0, 1, 2, 3, 4, 5, 6, 7]);
+  } else if (halfInfo) {
+    drawZoneToppingsOnSlices(z, centerX, centerY, halfInfo.leftToppings, [2, 3, 4, 5]);
+    drawZoneToppingsOnSlices(z, centerX, centerY, halfInfo.rightToppings, [0, 1, 6, 7]);
+  }
+
+  // Slice lines
+  z.strokeStyle = 'rgb(255,255,40)';
+  z.lineWidth = 4;
+  for (let i = 0; i < NUM_SLICES; i++) {
+    const angle = i * SLICE_WIDTH;
+    z.beginPath();
+    z.moveTo(centerX, centerY);
+    z.lineTo(centerX + Math.cos(angle) * PIZZA_RADIUS, centerY + Math.sin(angle) * PIZZA_RADIUS);
+    z.stroke();
+  }
+}
+
+/** Render zone-map toppings (simplified circles/lines) for given slices. */
+function drawZoneToppingsOnSlices(
+  z: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  toppings: ReadonlySet<string>,
+  slices: number[],
+) {
+  const toppingArr = Array.from(toppings);
   const positioned = toppingArr.filter(t => TOPPING_CONFIGS[t]?.type === 'positioned');
   const overlays = toppingArr.filter(t => TOPPING_CONFIGS[t]?.type === 'overlay');
   const posSets = distributePositions(positioned.length);
@@ -204,7 +275,7 @@ function drawZoneContent(
     const nc = NEON_TOPPING_COLORS[topping] ?? [255, 255, 40];
     z.fillStyle = `rgb(${nc[0]},${nc[1]},${nc[2]})`;
     const positions = posSets[tIdx] ?? [];
-    for (let si = 0; si < NUM_SLICES; si++) {
+    for (const si of slices) {
       const sliceStart = si * SLICE_WIDTH;
       positions.forEach(posIndex => {
         const pos = SLICE_POSITIONS[posIndex];
@@ -224,7 +295,7 @@ function drawZoneContent(
     z.lineWidth = 6;
     z.lineCap = 'round';
     z.lineJoin = 'round';
-    for (let si = 0; si < NUM_SLICES; si++) {
+    for (const si of slices) {
       const sliceStart = si * SLICE_WIDTH;
       z.beginPath();
       for (let step = 0; step <= 40; step++) {
@@ -241,17 +312,6 @@ function drawZoneContent(
     z.lineCap = 'butt';
     z.lineJoin = 'miter';
   });
-
-  // Slice lines
-  z.strokeStyle = 'rgb(255,255,40)';
-  z.lineWidth = 4;
-  for (let i = 0; i < NUM_SLICES; i++) {
-    const angle = i * SLICE_WIDTH;
-    z.beginPath();
-    z.moveTo(centerX, centerY);
-    z.lineTo(centerX + Math.cos(angle) * PIZZA_RADIUS, centerY + Math.sin(angle) * PIZZA_RADIUS);
-    z.stroke();
-  }
 }
 
 function drawZoneBackFace(
@@ -444,6 +504,8 @@ export function drawPizza(
   rotation = 0,
   sliceOffsets?: number[],
   activeFilter?: FilterType,
+  mode: PizzaMode = 'whole',
+  halfInfo?: HalfPizzaInfo,
 ) {
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
@@ -474,13 +536,13 @@ export function drawPizza(
 
       applySliceTransform(ctx, centerX, centerY, st);
       if (showBack) drawBackFace(ctx, centerX, centerY);
-      else drawContent(ctx, centerX, centerY, selectedToppings);
+      else drawContent(ctx, centerX, centerY, selectedToppings, mode, halfInfo);
       ctx.restore();
 
       if (zoneCtx) {
         applySliceTransform(zoneCtx, centerX, centerY, st);
         if (showBack) drawZoneBackFace(zoneCtx, centerX, centerY);
-        else drawZoneContent(zoneCtx, centerX, centerY, selectedToppings);
+        else drawZoneContent(zoneCtx, centerX, centerY, selectedToppings, mode, halfInfo);
         zoneCtx.restore();
       }
     }
@@ -489,7 +551,7 @@ export function drawPizza(
     ctx.translate(centerX, centerY);
     ctx.rotate(rotation);
     ctx.translate(-centerX, -centerY);
-    drawContent(ctx, centerX, centerY, selectedToppings);
+    drawContent(ctx, centerX, centerY, selectedToppings, mode, halfInfo);
     ctx.restore();
 
     if (zoneCtx) {
@@ -497,7 +559,7 @@ export function drawPizza(
       zoneCtx.translate(centerX, centerY);
       zoneCtx.rotate(rotation);
       zoneCtx.translate(-centerX, -centerY);
-      drawZoneContent(zoneCtx, centerX, centerY, selectedToppings);
+      drawZoneContent(zoneCtx, centerX, centerY, selectedToppings, mode, halfInfo);
       zoneCtx.restore();
     }
   }

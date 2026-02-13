@@ -1,10 +1,14 @@
 export type AnimationType = 'cw' | 'ccw' | 'wave' | 'wave-ccw' | null;
 export type FilterType = 'mono' | 'neon' | null;
+export type PizzaMode = 'whole' | 'half';
 
 export interface SavedPizza {
   id: string;
   name: string;
   toppings: string[];
+  mode: PizzaMode;
+  leftToppings: string[];
+  rightToppings: string[];
   animation: string | null;
   filter: string | null;
   createdAt: Date;
