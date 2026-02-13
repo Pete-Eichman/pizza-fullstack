@@ -298,6 +298,23 @@ const TOPPING_CONFIGS: Record<string, ToppingConfig> = {
   },
 };
 
+// Neon colour assigned to each pizza element (zone-map approach).
+// Instead of detecting colours from pixel hues (unreliable due to blending),
+// we re-draw the pizza with flat neon colours onto an offscreen canvas and read
+// the colour directly.  Edge detection still runs on the real render.
+const NEON_TOPPING_COLORS: Record<string, [number, number, number]> = {
+  pepperoni: [255, 20, 30],       // neon red
+  mushroom:  [180, 220, 255],     // ice blue
+  olive:     [30, 180, 200],      // teal
+  pepper:    [30, 255, 80],       // electric green
+  pineapple: [255, 200, 30],      // golden
+  ham:       [255, 110, 170],     // hot pink
+  chicken:   [255, 180, 50],      // warm amber
+  onion:     [200, 50, 255],      // neon purple
+  bacon:     [200, 30, 20],       // deep red
+  ranch:     [235, 240, 255],     // white
+};
+
 export default function PizzaCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedToppings, setSelectedToppings] = useState<Set<string>>(new Set());
@@ -479,6 +496,138 @@ export default function PizzaCanvas() {
       }
     };
 
+    // --- Zone-map canvas for neon filter (flat neon colours per element) ---
+    const needsZoneMap = activeFilter === 'neon';
+    let zoneCtx: CanvasRenderingContext2D | null = null;
+
+    if (needsZoneMap) {
+      const zC = document.createElement('canvas');
+      zC.width = canvas.width;
+      zC.height = canvas.height;
+      zoneCtx = zC.getContext('2d');
+    }
+
+    // Zone-map: draw front face with flat neon colours (same geometry, no textures)
+    const drawZoneContent = () => {
+      if (!zoneCtx) return;
+      const z = zoneCtx;
+      // Crust ring
+      z.beginPath();
+      z.arc(centerX, centerY, pizzaRadius + 10, 0, Math.PI * 2);
+      z.fillStyle = 'rgb(255,140,20)';
+      z.fill();
+      z.strokeStyle = 'rgb(255,120,15)';
+      z.lineWidth = 14;
+      z.stroke();
+      // Sauce
+      z.beginPath();
+      z.arc(centerX, centerY, pizzaRadius - 5, 0, Math.PI * 2);
+      z.fillStyle = 'rgb(255,20,30)';
+      z.fill();
+      // Cheese
+      z.beginPath();
+      z.arc(centerX, centerY, pizzaRadius - 15, 0, Math.PI * 2);
+      z.fillStyle = 'rgb(255,255,40)';
+      z.fill();
+      // Cheese ring stroke
+      z.strokeStyle = 'rgb(255,255,80)';
+      z.lineWidth = 3;
+      z.beginPath();
+      z.arc(centerX, centerY, pizzaRadius - 15, 0, Math.PI * 2);
+      z.stroke();
+
+      // Positioned toppings (simple circles at known positions)
+      const toppingArr = Array.from(selectedToppings);
+      const positioned = toppingArr.filter(t => TOPPING_CONFIGS[t]?.type === 'positioned');
+      const overlays = toppingArr.filter(t => TOPPING_CONFIGS[t]?.type === 'overlay');
+      const posSets = distributePositions(positioned.length);
+      const mnR = 40, mxR = 155;
+
+      positioned.forEach((topping, tIdx) => {
+        const nc = NEON_TOPPING_COLORS[topping] ?? [255, 255, 40];
+        z.fillStyle = `rgb(${nc[0]},${nc[1]},${nc[2]})`;
+        const positions = posSets[tIdx] ?? [];
+        for (let si = 0; si < numSlices; si++) {
+          const sliceStart = si * sliceWidth;
+          positions.forEach(posIndex => {
+            const pos = SLICE_POSITIONS[posIndex];
+            const angle = sliceStart + pos.af * sliceWidth;
+            const radius = mnR + pos.rf * (mxR - mnR);
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            z.beginPath();
+            z.arc(x, y, 14, 0, Math.PI * 2);
+            z.fill();
+          });
+        }
+      });
+
+      // Overlay toppings (ranch drizzle etc.)
+      overlays.forEach(topping => {
+        const nc = NEON_TOPPING_COLORS[topping] ?? [255, 255, 40];
+        z.strokeStyle = `rgb(${nc[0]},${nc[1]},${nc[2]})`;
+        z.lineWidth = 6;
+        z.lineCap = 'round';
+        z.lineJoin = 'round';
+        for (let si = 0; si < numSlices; si++) {
+          const sliceStart = si * sliceWidth;
+          z.beginPath();
+          for (let step = 0; step <= 40; step++) {
+            const t = step / 40;
+            const r = mnR * 0.5 + t * (mxR * 0.93 - mnR * 0.5);
+            const wave = Math.sin(t * Math.PI * 6) * 0.28;
+            const a = sliceStart + (0.5 + wave) * sliceWidth;
+            const px = centerX + Math.cos(a) * r;
+            const py = centerY + Math.sin(a) * r;
+            if (step === 0) z.moveTo(px, py); else z.lineTo(px, py);
+          }
+          z.stroke();
+        }
+        z.lineCap = 'butt';
+        z.lineJoin = 'miter';
+      });
+
+      // Slice lines
+      z.strokeStyle = 'rgb(255,255,40)';
+      z.lineWidth = 4;
+      for (let i = 0; i < numSlices; i++) {
+        const angle = i * sliceWidth;
+        z.beginPath();
+        z.moveTo(centerX, centerY);
+        z.lineTo(
+          centerX + Math.cos(angle) * pizzaRadius,
+          centerY + Math.sin(angle) * pizzaRadius
+        );
+        z.stroke();
+      }
+    };
+
+    // Zone-map: draw back face (all crust)
+    const drawZoneBackFace = () => {
+      if (!zoneCtx) return;
+      const z = zoneCtx;
+      z.beginPath();
+      z.arc(centerX, centerY, pizzaRadius + 10, 0, Math.PI * 2);
+      z.fillStyle = 'rgb(255,140,20)';
+      z.fill();
+      z.strokeStyle = 'rgb(255,120,15)';
+      z.lineWidth = 14;
+      z.stroke();
+      // Slice lines on back
+      z.strokeStyle = 'rgb(255,160,40)';
+      z.lineWidth = 4;
+      for (let i = 0; i < numSlices; i++) {
+        const angle = i * sliceWidth;
+        z.beginPath();
+        z.moveTo(centerX, centerY);
+        z.lineTo(
+          centerX + Math.cos(angle) * pizzaRadius,
+          centerY + Math.sin(angle) * pizzaRadius
+        );
+        z.stroke();
+      }
+    };
+
     if (sliceOffsets) {
       // Flip animation: each slice flips in place around its bisector axis
       const clipRadius = pizzaRadius + 25;
@@ -516,6 +665,23 @@ export default function PizzaCanvas() {
         }
 
         ctx.restore();
+
+        // Mirror same transform on zone canvas
+        if (zoneCtx) {
+          zoneCtx.save();
+          zoneCtx.translate(centerX, centerY);
+          zoneCtx.rotate(bisector);
+          zoneCtx.scale(1, scalePerp);
+          zoneCtx.rotate(-bisector);
+          zoneCtx.translate(-centerX, -centerY);
+          zoneCtx.beginPath();
+          zoneCtx.moveTo(centerX, centerY);
+          zoneCtx.arc(centerX, centerY, clipRadius, startAngle, startAngle + sliceWidth);
+          zoneCtx.closePath();
+          zoneCtx.clip();
+          if (showBack) { drawZoneBackFace(); } else { drawZoneContent(); }
+          zoneCtx.restore();
+        }
       }
     } else {
       // Global rotation (static, CW, CCW)
@@ -525,6 +691,16 @@ export default function PizzaCanvas() {
       ctx.translate(-centerX, -centerY);
       drawContent();
       ctx.restore();
+
+      // Mirror rotation on zone canvas
+      if (zoneCtx) {
+        zoneCtx.save();
+        zoneCtx.translate(centerX, centerY);
+        zoneCtx.rotate(rotation);
+        zoneCtx.translate(-centerX, -centerY);
+        drawZoneContent();
+        zoneCtx.restore();
+      }
     }
 
     // --- Apply visual filter ---
@@ -574,125 +750,24 @@ export default function PizzaCanvas() {
         }
         const invMax = maxEdge > 0 ? 1 / maxEdge : 0;
 
-        // 2. Map original colours to neon palette based on the actual pizza part.
-        //    For edge pixels, sample the max-saturation neighbour so blended
-        //    transition pixels snap to the actual topping colour.
+        // 2. Read neon colours directly from the zone-map canvas.
+        //    Each pizza element was drawn with its intended neon colour,
+        //    so we just read the pixel — no hue detection needed.
+        const zoneImageData = zoneCtx!.getImageData(0, 0, w, h);
+        const zd = zoneImageData.data;
         const neonR = new Uint8ClampedArray(w * h);
         const neonG = new Uint8ClampedArray(w * h);
         const neonB = new Uint8ClampedArray(w * h);
-
         for (let i = 0; i < w * h; i++) {
-          const p = i * 4;
-          if (d[p + 3] === 0) continue; // transparent
-
-          let r = d[p], g = d[p + 1], b = d[p + 2];
-
-          // Check if the ORIGINAL pixel is near-white before neighbor sampling.
-          // Ranch drizzle blended over cheese produces high-lum low-sat pixels
-          // that should stay white — neighbor sampling would override them.
-          const origLum = 0.299 * r + 0.587 * g + 0.114 * b;
-          const origMx = Math.max(r, g, b);
-          const origMn = Math.min(r, g, b);
-          const origSat = origMx > 0 ? (origMx - origMn) / origMx : 0;
-          const isWhitish = origLum > 195 && origSat < 0.25;
-
-          // For edge pixels, use the most-saturated neighbour colour
-          // so antialiased edges inherit the topping colour, not a blend.
-          // Skip this for near-white pixels (ranch, mozzarella).
-          const eVal = edge[i] * invMax;
-          if (eVal > 0.08 && !isWhitish) {
-            const iy = Math.floor(i / w);
-            const ix = i % w;
-            let bestSat = -1;
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dx = -1; dx <= 1; dx++) {
-                const ny = iy + dy, nx = ix + dx;
-                if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
-                const np = (ny * w + nx) * 4;
-                const nmx = Math.max(d[np], d[np + 1], d[np + 2]);
-                const nmn = Math.min(d[np], d[np + 1], d[np + 2]);
-                const ns = nmx > 0 ? (nmx - nmn) / nmx : 0;
-                if (ns > bestSat) {
-                  bestSat = ns;
-                  r = d[np]; g = d[np + 1]; b = d[np + 2];
-                }
-              }
-            }
-          }
-
-          const mx = Math.max(r, g, b);
-          const mn = Math.min(r, g, b);
-          const chroma = mx - mn;
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          const sat = mx > 0 ? chroma / mx : 0;
-
-          let hue = 0;
-          if (chroma > 10) {
-            if (mx === r) hue = ((g - b) / chroma + 6) % 6;
-            else if (mx === g) hue = (b - r) / chroma + 2;
-            else hue = (r - g) / chroma + 4;
-          }
-
-          let nr: number, ng: number, nb: number;
-
-          // --- Classification (most specific first) ---
-
-          if (lum > 205 && sat < 0.22) {
-            // Very bright, near-white → ranch drizzle, mozzarella → white
-            nr = 235; ng = 240; nb = 255;
-          } else if (lum < 40) {
-            // Very dark → olive outer ring, outlines → deep blue
-            nr = 20; ng = 40; nb = 200;
-          } else if (sat < 0.15 && lum > 55) {
-            // Desaturated, mid-high lum → mushrooms → ice blue
-            nr = 180; ng = 220; nb = 255;
-          } else if (Math.abs(r - g) < 20 && b < g * 0.55 && sat > 0.3 && lum < 160) {
-            // Equal R/G with low blue → olive inner fill (#8B8B3A) → teal
-            nr = 30; ng = 180; nb = 200;
-          } else if (hue > 5.3 && lum > 135 && sat < 0.55) {
-            // Pink/rose tones, high luminance → ham → neon hot pink
-            nr = 255; ng = 110; nb = 170;
-          } else if ((hue < 0.45 || hue > 5.7) && sat > 0.40) {
-            // Saturated reds → pepperoni, sauce, bacon → neon red
-            nr = 255; ng = 20; nb = 30;
-          } else if (g > r * 0.65 && g > b * 1.4 && hue >= 1.5) {
-            // Green-dominant → peppers, basil → electric green
-            nr = 30; ng = 255; nb = 80;
-          } else if (hue >= 0.45 && hue < 0.7 && sat > 0.3 && lum > 120) {
-            // Warm orange, light → slice lines → neon yellow
-            nr = 255; ng = 255; nb = 40;
-          } else if (hue >= 0.45 && hue < 0.7 && sat > 0.3) {
-            // Warm orange, darker → dark crust → orange
-            nr = 255; ng = 120; nb = 20;
-          } else if (hue >= 0.7 && hue < 1.3 && lum >= 170) {
-            // Light golden → cheese, chicken body → golden yellow
-            nr = 255; ng = 230; nb = 50;
-          } else if (hue >= 0.7 && hue < 1.3) {
-            // Orange-brown → crust, grill marks → warm amber
-            nr = 255; ng = 160; nb = 30;
-          } else if (hue >= 1.3 && hue < 1.6 && lum > 140) {
-            // Yellow → cheese highlights → neon yellow
-            nr = 255; ng = 255; nb = 40;
-          } else if (hue >= 1.3 && hue < 1.6) {
-            // Dark yellow → amber
-            nr = 255; ng = 180; nb = 20;
-          } else if (hue >= 1.6 && hue < 3.6) {
-            // Green range → peppers, pineapple → electric green
-            nr = 30; ng = 255; nb = 80;
-          } else if (hue >= 3.6 && hue < 5.0) {
-            // Blue → electric blue
-            nr = 30; ng = 150; nb = 255;
-          } else if (hue >= 5.0 && hue <= 5.3) {
-            // Deep magenta/purple → onion → neon magenta
-            nr = 200; ng = 50; nb = 255;
+          const zp = i * 4;
+          if (zd[zp + 3] === 0) {
+            // Transparent (background) → dark base
+            neonR[i] = 8; neonG[i] = 5; neonB[i] = 20;
           } else {
-            // Remaining (transition pinks near red) → neon red
-            nr = 255; ng = 20; nb = 30;
+            neonR[i] = zd[zp];
+            neonG[i] = zd[zp + 1];
+            neonB[i] = zd[zp + 2];
           }
-
-          neonR[i] = nr;
-          neonG[i] = ng;
-          neonB[i] = nb;
         }
 
         // 3. Build output: dark bg + neon edges + soft glow
