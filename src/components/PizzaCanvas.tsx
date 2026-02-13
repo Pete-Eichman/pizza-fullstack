@@ -606,12 +606,15 @@ export default function PizzaCanvas() {
           } else if (sat < 0.15 && lum > 60) {
             // Low saturation, lighter (mushrooms, mozzarella blobs) → cool white/ice blue
             nr = 180; ng = 220; nb = 255;
-          } else if (hue < 0.6 && sat > 0.45 && lum < 140) {
+          } else if (hue < 0.35 && sat > 0.45 && lum < 140) {
             // Deep saturated red → sauce / pepperoni → neon red
             nr = 255; ng = 20; nb = 30;
-          } else if (hue < 0.6 && sat > 0.45 && lum >= 140) {
-            // Bright saturated red → sauce highlights → neon coral-red
+          } else if (hue < 0.35 && sat > 0.45 && lum >= 140) {
+            // Bright saturated red → sauce highlights → neon red
             nr = 255; ng = 60; nb = 50;
+          } else if (hue >= 0.35 && hue < 0.6 && sat > 0.3) {
+            // Warm orange-brown → slice lines, crust edges → neon yellow
+            nr = 255; ng = 255; nb = 40;
           } else if (hue >= 0.6 && hue < 1.3 && lum < 160) {
             // Orange-brown → crust → warm neon orange
             nr = 255; ng = 140; nb = 20;
