@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { savePizza, getUserPizzas, deletePizza } from '@/app/actions/pizza';
 import { drawPizza } from '@/lib/pizzaRenderer';
 import type { HalfPizzaInfo } from '@/lib/pizzaRenderer';
-import { getWaveOffsets } from '@/lib/animation';
+import { getWaveOffsets, getFlipAngle } from '@/lib/animation';
 import { TOPPING_CONFIGS, MAX_TOPPINGS } from '@/lib/toppings';
 import type { AnimationType, FilterType, PizzaMode, SavedPizza } from '@/types/pizza';
 
@@ -117,8 +117,8 @@ export default function PizzaCanvas() {
   // ── Stable draw callback ───────────────────────────────────────────────────
 
   const draw = useCallback(
-    (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, rotation = 0, sliceOffsets?: number[]) => {
-      drawPizza(ctx, canvas, selectedToppings, rotation, sliceOffsets, filter, mode, halfInfo);
+    (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, rotation = 0, sliceOffsets?: number[], flipAngle?: number) => {
+      drawPizza(ctx, canvas, selectedToppings, rotation, sliceOffsets, filter, mode, halfInfo, flipAngle);
     },
     [selectedToppings, filter, mode, halfInfo],
   );
@@ -143,6 +143,17 @@ export default function PizzaCanvas() {
       const animate = () => {
         const elapsed = performance.now() / 1000 - startTime;
         draw(ctx, canvas, 0, getWaveOffsets(elapsed, reverse));
+        rafRef.current = requestAnimationFrame(animate);
+      };
+      rafRef.current = requestAnimationFrame(animate);
+      return () => cancelAnimationFrame(rafRef.current);
+    }
+
+    if (animation === 'flip') {
+      const startTime = performance.now() / 1000;
+      const animate = () => {
+        const elapsed = performance.now() / 1000 - startTime;
+        draw(ctx, canvas, 0, undefined, getFlipAngle(elapsed));
         rafRef.current = requestAnimationFrame(animate);
       };
       rafRef.current = requestAnimationFrame(animate);
@@ -267,6 +278,19 @@ export default function PizzaCanvas() {
           off.getContext('2d')!.drawImage(canvas, 0, 0);
           frames.push({ data: off, delay: 33 });
         }
+      } else if (animation === 'flip') {
+        const flipDuration = 0.7;
+        const pauseDuration = 0.35;
+        const cycleDuration = 2 * flipDuration + 2 * pauseDuration;
+        const totalFrames = 70;
+        for (let i = 0; i < totalFrames; i++) {
+          draw(ctx, canvas, 0, undefined, getFlipAngle((i / totalFrames) * cycleDuration));
+          const off = document.createElement('canvas');
+          off.width = canvas.width;
+          off.height = canvas.height;
+          off.getContext('2d')!.drawImage(canvas, 0, 0);
+          frames.push({ data: off, delay: 33 });
+        }
       } else {
         const totalFrames = 60;
         const step = (animation === 'cw' ? 1 : -1) * (Math.PI * 2) / totalFrames;
@@ -381,7 +405,7 @@ export default function PizzaCanvas() {
                 Animation
               </p>
               <div className="flex flex-wrap gap-2">
-                {([['cw', 'Rotate CW ↻'], ['ccw', 'Rotate CCW ↺'], ['wave', 'Wave CW 🍕'], ['wave-ccw', 'Wave CCW 🍕']] as const).map(
+                {([['cw', 'Rotate CW ↻'], ['ccw', 'Rotate CCW ↺'], ['wave', 'Wave CW 🍕'], ['wave-ccw', 'Wave CCW 🍕'], ['flip', 'Flip 🪙']] as const).map(
                   ([type, label]) => (
                     <ToggleButton key={type} active={animation === type} onClick={() => toggleAnimation(type)}>
                       {label}
@@ -484,7 +508,7 @@ export default function PizzaCanvas() {
                   </div>
                   <p className="text-xs text-stone-500 dark:text-zinc-400 mb-2">
                     {describePizzaToppings(pizza)}
-                    {pizza.animation && ` · ${pizza.animation === 'cw' ? '↻' : pizza.animation === 'ccw' ? '↺' : '🍕'}`}
+                    {pizza.animation && ` · ${pizza.animation === 'cw' ? '↻' : pizza.animation === 'ccw' ? '↺' : pizza.animation === 'flip' ? '🪙' : '🍕'}`}
                     {pizza.filter && ` · ${pizza.filter === 'mono' ? '🖤' : '💜'}`}
                   </p>
                   <button
