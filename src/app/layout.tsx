@@ -6,8 +6,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Pizza Builder',
-  description: 'Build and save your custom pizza creations',
+  title: 'PizzaPostr',
+  description: 'Build, animate, and share your custom pizza creations',
 };
 
 export default function RootLayout({

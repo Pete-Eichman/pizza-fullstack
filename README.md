@@ -1,6 +1,6 @@
-# Pizza Builder
+# PizzaPostr
 
-A full-stack pizza customization app built with Next.js. Users sign in, build a pizza with toppings on an interactive canvas, and save/load their creations. Features light/dark theming, deterministic topping rendering, and full authentication.
+A full-stack pizza creation and sharing app built with Next.js. Users sign in, build a pizza with toppings on an interactive canvas, and save/load their creations. Features light/dark theming, deterministic topping rendering, and full authentication.
 
 ## Tech Stack
 
