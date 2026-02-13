@@ -26,6 +26,7 @@ HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
   fillStyle: '',
   strokeStyle: '',
   lineWidth: 0,
+  globalAlpha: 1,
 });
 
 import { savePizza, getUserPizzas, deletePizza } from '@/app/actions/pizza';
@@ -52,7 +53,6 @@ describe('PizzaCanvas', () => {
     expect(screen.getByText('Ham')).toBeInTheDocument();
     expect(screen.getByText('Chicken')).toBeInTheDocument();
     expect(screen.getByText('Onions')).toBeInTheDocument();
-    expect(screen.getByText('Ricotta')).toBeInTheDocument();
     expect(screen.getByText('Bacon')).toBeInTheDocument();
     expect(screen.getByText('Ranch')).toBeInTheDocument();
   });

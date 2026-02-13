@@ -10,31 +10,59 @@ interface SavedPizza {
   createdAt: Date;
 }
 
-type ToppingRenderer = (ctx: CanvasRenderingContext2D, x: number, y: number) => void;
+type PositionedRenderer = (ctx: CanvasRenderingContext2D, x: number, y: number) => void;
+type OverlayRenderer = (
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  startAngle: number,
+  sliceWidth: number,
+  innerR: number,
+  outerR: number
+) => void;
 
 // Fixed positions within each slice: af = angle fraction (0-1), rf = radius fraction (0-1)
-// Each topping type uses distinct positions so they never overlap
 const SLICE_POSITIONS: Array<{ af: number; rf: number }> = [
-  { af: 0.50, rf: 0.15 }, // inner center
-  { af: 0.30, rf: 0.37 }, // mid-inner left
-  { af: 0.70, rf: 0.37 }, // mid-inner right
-  { af: 0.22, rf: 0.58 }, // middle left
-  { af: 0.50, rf: 0.55 }, // middle center
-  { af: 0.78, rf: 0.58 }, // middle right
-  { af: 0.22, rf: 0.80 }, // outer left
-  { af: 0.50, rf: 0.78 }, // outer center
-  { af: 0.78, rf: 0.80 }, // outer right
+  { af: 0.50, rf: 0.15 }, // 0: inner center
+  { af: 0.30, rf: 0.37 }, // 1: mid-inner left
+  { af: 0.70, rf: 0.37 }, // 2: mid-inner right
+  { af: 0.22, rf: 0.58 }, // 3: middle left
+  { af: 0.50, rf: 0.55 }, // 4: middle center
+  { af: 0.78, rf: 0.58 }, // 5: middle right
+  { af: 0.22, rf: 0.80 }, // 6: outer left
+  { af: 0.50, rf: 0.78 }, // 7: outer center
+  { af: 0.78, rf: 0.80 }, // 8: outer right
 ];
+
+// Distribute 9 slot positions among N toppings — more toppings = fewer per topping
+function distributePositions(count: number): number[][] {
+  if (count === 0) return [];
+  if (count === 1) return [[0, 1, 4, 6, 8]];
+  if (count === 2) return [[0, 2, 5, 7], [1, 3, 6, 8]];
+  if (count === 3) return [[0, 4, 8], [1, 5, 6], [2, 3, 7]];
+  return [[0, 8], [1, 5], [4, 6], [3, 7]];
+}
 
 const MAX_TOPPINGS = 4;
 
-const TOPPING_CONFIGS: Record<
-  string,
-  { label: string; render: ToppingRenderer; positions: number[] }
-> = {
+interface PositionedTopping {
+  label: string;
+  type: 'positioned';
+  render: PositionedRenderer;
+}
+
+interface OverlayTopping {
+  label: string;
+  type: 'overlay';
+  renderSlice: OverlayRenderer;
+}
+
+type ToppingConfig = PositionedTopping | OverlayTopping;
+
+const TOPPING_CONFIGS: Record<string, ToppingConfig> = {
   pepperoni: {
     label: 'Pepperoni',
-    positions: [0, 5],
+    type: 'positioned',
     render: (ctx, x, y) => {
       ctx.fillStyle = '#C23B22';
       ctx.beginPath();
@@ -51,7 +79,7 @@ const TOPPING_CONFIGS: Record<
   },
   mushroom: {
     label: 'Mushrooms',
-    positions: [1, 8],
+    type: 'positioned',
     render: (ctx, x, y) => {
       ctx.fillStyle = '#F5F0E0';
       ctx.fillRect(x - 3, y, 6, 8);
@@ -67,7 +95,7 @@ const TOPPING_CONFIGS: Record<
   },
   olive: {
     label: 'Olives',
-    positions: [2, 4, 6],
+    type: 'positioned',
     render: (ctx, x, y) => {
       ctx.fillStyle = '#2D2D2D';
       ctx.beginPath();
@@ -81,7 +109,7 @@ const TOPPING_CONFIGS: Record<
   },
   pepper: {
     label: 'Peppers',
-    positions: [3, 7],
+    type: 'positioned',
     render: (ctx, x, y) => {
       ctx.fillStyle = '#4A8C3F';
       ctx.fillRect(x - 5, y - 7, 10, 14);
@@ -91,18 +119,21 @@ const TOPPING_CONFIGS: Record<
   },
   pineapple: {
     label: 'Pineapple',
-    positions: [0, 7],
+    type: 'positioned',
     render: (ctx, x, y) => {
-      // Yellow wedge chunk
-      ctx.fillStyle = '#F5D547';
+      // Chunky golden-orange wedge with dark outline for contrast
+      ctx.fillStyle = '#E8A317';
+      ctx.strokeStyle = '#8B6914';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(x, y - 8);
       ctx.lineTo(x + 7, y + 6);
       ctx.lineTo(x - 7, y + 6);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
       // Inner detail lines
-      ctx.strokeStyle = '#D4A520';
+      ctx.strokeStyle = '#C47F10';
       ctx.lineWidth = 0.8;
       ctx.beginPath();
       ctx.moveTo(x - 3, y - 1);
@@ -114,9 +145,8 @@ const TOPPING_CONFIGS: Record<
   },
   ham: {
     label: 'Ham',
-    positions: [3, 6],
+    type: 'positioned',
     render: (ctx, x, y) => {
-      // Pink ham square/chunk
       ctx.fillStyle = '#F0A0B0';
       ctx.beginPath();
       ctx.moveTo(x - 8, y - 5);
@@ -125,75 +155,66 @@ const TOPPING_CONFIGS: Record<
       ctx.lineTo(x - 6, y + 7);
       ctx.closePath();
       ctx.fill();
-      // Fat marbling
       ctx.fillStyle = '#F8C8D0';
       ctx.beginPath();
-      ctx.ellipse(x - 2, y + 1, 3, 1.5, 0.3, 0, Math.PI * 2);
+      ctx.arc(x - 2, y + 1, 2.5, 0, Math.PI * 2);
       ctx.fill();
     },
   },
   chicken: {
     label: 'Chicken',
-    positions: [1, 5],
+    type: 'positioned',
     render: (ctx, x, y) => {
-      // Grilled chicken strip
+      // Rectangular grilled chicken strip
       ctx.fillStyle = '#E8C888';
+      ctx.fillRect(x - 12, y - 4, 24, 8);
+      // Rounded ends
       ctx.beginPath();
-      ctx.ellipse(x, y, 10, 6, 0.4, 0, Math.PI * 2);
+      ctx.arc(x - 12, y, 4, Math.PI * 0.5, Math.PI * 1.5);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + 12, y, 4, -Math.PI * 0.5, Math.PI * 0.5);
       ctx.fill();
       // Grill marks
       ctx.strokeStyle = '#A07830';
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.moveTo(x - 6, y - 2);
-      ctx.lineTo(x + 6, y + 2);
-      ctx.moveTo(x - 5, y + 2);
-      ctx.lineTo(x + 5, y + 6);
+      ctx.moveTo(x - 7, y - 4);
+      ctx.lineTo(x - 7, y + 4);
+      ctx.moveTo(x - 1, y - 4);
+      ctx.lineTo(x - 1, y + 4);
+      ctx.moveTo(x + 5, y - 4);
+      ctx.lineTo(x + 5, y + 4);
       ctx.stroke();
     },
   },
   onion: {
     label: 'Onions',
-    positions: [2, 8],
+    type: 'positioned',
     render: (ctx, x, y) => {
-      // Semi-transparent onion ring
-      ctx.strokeStyle = '#D8BFD8';
+      // Red onion ring
+      ctx.strokeStyle = '#8B2252';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
       ctx.stroke();
-      // Inner ring
-      ctx.strokeStyle = '#E8D8E8';
+      // Inner concentric ring
+      ctx.strokeStyle = '#C44D80';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
       ctx.stroke();
-    },
-  },
-  ricotta: {
-    label: 'Ricotta',
-    positions: [4, 6],
-    render: (ctx, x, y) => {
-      // White creamy dollop
-      ctx.fillStyle = '#FAFAF0';
+      // Center highlight
+      ctx.strokeStyle = '#D87DA0';
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(x, y, 9, 0, Math.PI * 2);
-      ctx.fill();
-      // Subtle shadow/depth
-      ctx.fillStyle = '#F0EBD8';
-      ctx.beginPath();
-      ctx.arc(x + 1, y + 2, 6, 0, Math.PI * 2);
-      ctx.fill();
-      // Highlight
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath();
-      ctx.arc(x - 2, y - 3, 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.stroke();
     },
   },
   bacon: {
     label: 'Bacon',
-    positions: [0, 4, 8],
+    type: 'positioned',
     render: (ctx, x, y) => {
       // Wavy bacon strip
       ctx.fillStyle = '#8B2500';
@@ -214,20 +235,30 @@ const TOPPING_CONFIGS: Record<
   },
   ranch: {
     label: 'Ranch',
-    positions: [2, 5, 7],
-    render: (ctx, x, y) => {
-      // Drizzle dots/splatter
-      ctx.fillStyle = '#FAF8F0';
-      ctx.beginPath();
-      ctx.ellipse(x, y, 6, 4, 0.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#F5F0E0';
-      ctx.beginPath();
-      ctx.arc(x + 5, y - 3, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(x - 4, y + 4, 2, 0, Math.PI * 2);
-      ctx.fill();
+    type: 'overlay',
+    renderSlice: (ctx, cx, cy, startAngle, sliceWidth, innerR, outerR) => {
+      // Drizzle lines across the slice
+      ctx.strokeStyle = '#FAF8F0';
+      ctx.lineWidth = 1.8;
+      ctx.globalAlpha = 0.75;
+      const fractions = [0.2, 0.4, 0.6, 0.8];
+      fractions.forEach((f) => {
+        const angle = startAngle + f * sliceWidth;
+        ctx.beginPath();
+        const steps = 10;
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const r = innerR + t * (outerR - innerR);
+          const wobble = Math.sin(t * Math.PI * 3 + f * 7) * 0.04;
+          const a = angle + wobble;
+          const px = cx + Math.cos(a) * r;
+          const py = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1.0;
     },
   },
 };
@@ -280,29 +311,51 @@ export default function PizzaCanvas() {
     ctx.fillStyle = '#EFC050';
     ctx.fill();
 
-    // Draw toppings at fixed positions per slice
+    // Draw toppings with dynamic density
     const toppingArray = Array.from(selectedToppings);
     const minR = 40;
     const maxR = 155;
     const sliceWidth = (Math.PI * 2) / numSlices;
 
-    toppingArray.forEach((topping) => {
+    // Separate positioned vs overlay toppings
+    const positionedToppings = toppingArray.filter(
+      (t) => TOPPING_CONFIGS[t]?.type === 'positioned'
+    );
+    const overlayToppings = toppingArray.filter(
+      (t) => TOPPING_CONFIGS[t]?.type === 'overlay'
+    );
+
+    // Dynamic density: fewer positioned toppings = more items per slice per topping
+    const positionSets = distributePositions(positionedToppings.length);
+
+    // Draw positioned toppings
+    positionedToppings.forEach((topping, tIdx) => {
       const config = TOPPING_CONFIGS[topping];
-      if (!config) return;
+      if (!config || config.type !== 'positioned') return;
+      const positions = positionSets[tIdx] ?? [];
 
       for (let sliceIndex = 0; sliceIndex < numSlices; sliceIndex++) {
         const sliceStartAngle = (sliceIndex * Math.PI * 2) / numSlices;
 
-        config.positions.forEach((posIndex) => {
+        positions.forEach((posIndex) => {
           const pos = SLICE_POSITIONS[posIndex];
           const angle = sliceStartAngle + pos.af * sliceWidth;
           const radius = minR + pos.rf * (maxR - minR);
-
           const x = centerX + Math.cos(angle) * radius;
           const y = centerY + Math.sin(angle) * radius;
-
           config.render(ctx, x, y);
         });
+      }
+    });
+
+    // Draw overlay toppings (e.g. ranch drizzle) on top
+    overlayToppings.forEach((topping) => {
+      const config = TOPPING_CONFIGS[topping];
+      if (!config || config.type !== 'overlay') return;
+
+      for (let sliceIndex = 0; sliceIndex < numSlices; sliceIndex++) {
+        const sliceStartAngle = (sliceIndex * Math.PI * 2) / numSlices;
+        config.renderSlice(ctx, centerX, centerY, sliceStartAngle, sliceWidth, minR, maxR);
       }
     });
 
