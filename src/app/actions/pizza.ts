@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 const pizzaSchema = z.object({
   name: z.string().min(1).max(50),
-  toppings: z.array(z.string()).max(10),
+  toppings: z.array(z.string()).max(4),
 });
 
 export async function getUserPizzas() {

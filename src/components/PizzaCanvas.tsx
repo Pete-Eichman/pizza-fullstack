@@ -26,6 +26,8 @@ const SLICE_POSITIONS: Array<{ af: number; rf: number }> = [
   { af: 0.78, rf: 0.80 }, // outer right
 ];
 
+const MAX_TOPPINGS = 4;
+
 const TOPPING_CONFIGS: Record<
   string,
   { label: string; render: ToppingRenderer; positions: number[] }
@@ -85,6 +87,147 @@ const TOPPING_CONFIGS: Record<
       ctx.fillRect(x - 5, y - 7, 10, 14);
       ctx.fillStyle = '#367030';
       ctx.fillRect(x - 2, y - 7, 4, 14);
+    },
+  },
+  pineapple: {
+    label: 'Pineapple',
+    positions: [0, 7],
+    render: (ctx, x, y) => {
+      // Yellow wedge chunk
+      ctx.fillStyle = '#F5D547';
+      ctx.beginPath();
+      ctx.moveTo(x, y - 8);
+      ctx.lineTo(x + 7, y + 6);
+      ctx.lineTo(x - 7, y + 6);
+      ctx.closePath();
+      ctx.fill();
+      // Inner detail lines
+      ctx.strokeStyle = '#D4A520';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x - 3, y - 1);
+      ctx.lineTo(x + 3, y - 1);
+      ctx.moveTo(x - 5, y + 3);
+      ctx.lineTo(x + 5, y + 3);
+      ctx.stroke();
+    },
+  },
+  ham: {
+    label: 'Ham',
+    positions: [3, 6],
+    render: (ctx, x, y) => {
+      // Pink ham square/chunk
+      ctx.fillStyle = '#F0A0B0';
+      ctx.beginPath();
+      ctx.moveTo(x - 8, y - 5);
+      ctx.lineTo(x + 6, y - 7);
+      ctx.lineTo(x + 8, y + 5);
+      ctx.lineTo(x - 6, y + 7);
+      ctx.closePath();
+      ctx.fill();
+      // Fat marbling
+      ctx.fillStyle = '#F8C8D0';
+      ctx.beginPath();
+      ctx.ellipse(x - 2, y + 1, 3, 1.5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    },
+  },
+  chicken: {
+    label: 'Chicken',
+    positions: [1, 5],
+    render: (ctx, x, y) => {
+      // Grilled chicken strip
+      ctx.fillStyle = '#E8C888';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 10, 6, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      // Grill marks
+      ctx.strokeStyle = '#A07830';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(x - 6, y - 2);
+      ctx.lineTo(x + 6, y + 2);
+      ctx.moveTo(x - 5, y + 2);
+      ctx.lineTo(x + 5, y + 6);
+      ctx.stroke();
+    },
+  },
+  onion: {
+    label: 'Onions',
+    positions: [2, 8],
+    render: (ctx, x, y) => {
+      // Semi-transparent onion ring
+      ctx.strokeStyle = '#D8BFD8';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      // Inner ring
+      ctx.strokeStyle = '#E8D8E8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    },
+  },
+  ricotta: {
+    label: 'Ricotta',
+    positions: [4, 6],
+    render: (ctx, x, y) => {
+      // White creamy dollop
+      ctx.fillStyle = '#FAFAF0';
+      ctx.beginPath();
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.fill();
+      // Subtle shadow/depth
+      ctx.fillStyle = '#F0EBD8';
+      ctx.beginPath();
+      ctx.arc(x + 1, y + 2, 6, 0, Math.PI * 2);
+      ctx.fill();
+      // Highlight
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(x - 2, y - 3, 3, 0, Math.PI * 2);
+      ctx.fill();
+    },
+  },
+  bacon: {
+    label: 'Bacon',
+    positions: [0, 4, 8],
+    render: (ctx, x, y) => {
+      // Wavy bacon strip
+      ctx.fillStyle = '#8B2500';
+      ctx.beginPath();
+      ctx.moveTo(x - 9, y - 3);
+      ctx.quadraticCurveTo(x - 4, y - 7, x, y - 3);
+      ctx.quadraticCurveTo(x + 4, y + 1, x + 9, y - 3);
+      ctx.lineTo(x + 9, y + 3);
+      ctx.quadraticCurveTo(x + 4, y + 7, x, y + 3);
+      ctx.quadraticCurveTo(x - 4, y - 1, x - 9, y + 3);
+      ctx.closePath();
+      ctx.fill();
+      // Fat streaks
+      ctx.fillStyle = '#C87050';
+      ctx.fillRect(x - 5, y - 1, 4, 2);
+      ctx.fillRect(x + 2, y - 1, 3, 2);
+    },
+  },
+  ranch: {
+    label: 'Ranch',
+    positions: [2, 5, 7],
+    render: (ctx, x, y) => {
+      // Drizzle dots/splatter
+      ctx.fillStyle = '#FAF8F0';
+      ctx.beginPath();
+      ctx.ellipse(x, y, 6, 4, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#F5F0E0';
+      ctx.beginPath();
+      ctx.arc(x + 5, y - 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x - 4, y + 4, 2, 0, Math.PI * 2);
+      ctx.fill();
     },
   },
 };
@@ -191,7 +334,7 @@ export default function PizzaCanvas() {
       const newToppings = new Set(prev);
       if (newToppings.has(topping)) {
         newToppings.delete(topping);
-      } else {
+      } else if (newToppings.size < MAX_TOPPINGS) {
         newToppings.add(topping);
       }
       return newToppings;
@@ -248,23 +391,39 @@ export default function PizzaCanvas() {
 
           <div className="space-y-5">
             <div>
-              <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
-                Toppings
-              </p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium text-stone-500 dark:text-zinc-400 uppercase tracking-wider">
+                  Toppings
+                </p>
+                <p className={`text-xs font-medium ${
+                  selectedToppings.size >= MAX_TOPPINGS
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-stone-400 dark:text-zinc-500'
+                }`}>
+                  {selectedToppings.size}/{MAX_TOPPINGS} selected
+                </p>
+              </div>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(TOPPING_CONFIGS).map(([id, config]) => (
-                  <button
-                    key={id}
-                    onClick={() => toggleTopping(id)}
-                    className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                      selectedToppings.has(id)
-                        ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
-                        : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
-                    }`}
-                  >
-                    {config.label}
-                  </button>
-                ))}
+                {Object.entries(TOPPING_CONFIGS).map(([id, config]) => {
+                  const isSelected = selectedToppings.has(id);
+                  const isDisabled = !isSelected && selectedToppings.size >= MAX_TOPPINGS;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => toggleTopping(id)}
+                      disabled={isDisabled}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'bg-stone-800 text-white dark:bg-amber-600 dark:text-white'
+                          : isDisabled
+                          ? 'bg-stone-50 text-stone-300 cursor-not-allowed dark:bg-zinc-800 dark:text-zinc-600'
+                          : 'bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                      }`}
+                    >
+                      {config.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

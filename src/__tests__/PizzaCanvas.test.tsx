@@ -20,6 +20,9 @@ HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
   moveTo: vi.fn(),
   lineTo: vi.fn(),
   fillRect: vi.fn(),
+  closePath: vi.fn(),
+  ellipse: vi.fn(),
+  quadraticCurveTo: vi.fn(),
   fillStyle: '',
   strokeStyle: '',
   lineWidth: 0,
@@ -45,6 +48,35 @@ describe('PizzaCanvas', () => {
     expect(screen.getByText('Mushrooms')).toBeInTheDocument();
     expect(screen.getByText('Olives')).toBeInTheDocument();
     expect(screen.getByText('Peppers')).toBeInTheDocument();
+    expect(screen.getByText('Pineapple')).toBeInTheDocument();
+    expect(screen.getByText('Ham')).toBeInTheDocument();
+    expect(screen.getByText('Chicken')).toBeInTheDocument();
+    expect(screen.getByText('Onions')).toBeInTheDocument();
+    expect(screen.getByText('Ricotta')).toBeInTheDocument();
+    expect(screen.getByText('Bacon')).toBeInTheDocument();
+    expect(screen.getByText('Ranch')).toBeInTheDocument();
+  });
+
+  it('shows topping counter', () => {
+    render(<PizzaCanvas />);
+    expect(screen.getByText('0/4 selected')).toBeInTheDocument();
+  });
+
+  it('prevents selecting more than 4 toppings', async () => {
+    const user = userEvent.setup();
+    render(<PizzaCanvas />);
+
+    await user.click(screen.getByText('Pepperoni'));
+    await user.click(screen.getByText('Mushrooms'));
+    await user.click(screen.getByText('Olives'));
+    await user.click(screen.getByText('Bacon'));
+
+    // 5th topping button should be disabled
+    const chickenBtn = screen.getByText('Chicken');
+    expect(chickenBtn).toBeDisabled();
+
+    // Counter should show 4/4
+    expect(screen.getByText('4/4 selected')).toBeInTheDocument();
   });
 
   it('toggles topping selection on click', async () => {

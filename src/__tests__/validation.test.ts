@@ -9,7 +9,7 @@ import { z } from 'zod';
 // Mirror the schemas from the source code
 const pizzaSchema = z.object({
   name: z.string().min(1).max(50),
-  toppings: z.array(z.string()).max(10),
+  toppings: z.array(z.string()).max(4),
 });
 
 const registerSchema = z.object({
@@ -51,10 +51,10 @@ describe('Pizza Validation Schema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects more than 10 toppings', () => {
+  it('rejects more than 4 toppings', () => {
     const result = pizzaSchema.safeParse({
       name: 'Everything',
-      toppings: Array.from({ length: 11 }, (_, i) => `topping${i}`),
+      toppings: Array.from({ length: 5 }, (_, i) => `topping${i}`),
     });
     expect(result.success).toBe(false);
   });
