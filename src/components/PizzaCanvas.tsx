@@ -237,20 +237,21 @@ const TOPPING_CONFIGS: Record<string, ToppingConfig> = {
     label: 'Ranch',
     type: 'overlay',
     renderSlice: (ctx, cx, cy, startAngle, sliceWidth, innerR, outerR) => {
-      // Single zig-zag drizzle line across and down the slice
+      // Smooth wavy drizzle line using a sine wave across the slice
       ctx.strokeStyle = '#FAF8F0';
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.globalAlpha = 0.8;
 
       ctx.beginPath();
-      const steps = 24;
+      const steps = 40;
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
         const r = innerR * 0.5 + t * (outerR * 0.93 - innerR * 0.5);
-        // Zig-zag: alternate between left and right sides of the slice
-        const zigzag = (i % 2 === 0 ? -0.3 : 0.3);
-        const a = startAngle + (0.5 + zigzag) * sliceWidth;
+        // Smooth sine wave oscillation across the slice
+        const wave = Math.sin(t * Math.PI * 6) * 0.28;
+        const a = startAngle + (0.5 + wave) * sliceWidth;
         const px = cx + Math.cos(a) * r;
         const py = cy + Math.sin(a) * r;
         if (i === 0) ctx.moveTo(px, py);
@@ -259,6 +260,7 @@ const TOPPING_CONFIGS: Record<string, ToppingConfig> = {
       ctx.stroke();
       ctx.globalAlpha = 1.0;
       ctx.lineCap = 'butt';
+      ctx.lineJoin = 'miter';
     },
   },
 };
